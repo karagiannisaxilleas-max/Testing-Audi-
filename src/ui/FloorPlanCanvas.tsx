@@ -1,21 +1,44 @@
-// The drawing surface: renders the floor-plan image on a Konva stage with
-// wheel-zoom and drag-to-pan. Camera/wall/zone rendering arrives in later
-// phases; the stage and viewport plumbing live here from Phase 0.
+// The drawing surface: Konva stage with wheel-zoom and drag-to-pan, the
+// floor-plan image, camera shapes with FOV cones, and the two-click scale
+// calibration flow.
 
 import { useEffect, useRef, useState } from "react";
-import { Image as KonvaImage, Layer, Stage } from "react-konva";
+import { Circle, Image as KonvaImage, Layer, Line, Stage } from "react-konva";
 import type Konva from "konva";
 import { useStore } from "../state/store";
+import { createCamera } from "../state/camera";
+import { computeScale } from "../engine/calibration";
+import type { Point, Scale } from "../engine/types";
+import { CameraShape } from "./CameraShape";
+import { displayToMeters, unitLabel } from "./units";
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 8;
+// When the plan is not yet calibrated, draw cones at this nominal scale so
+// something meaningful is visible. Status bar flags the uncalibrated state.
+const FALLBACK_PX_PER_M = 20;
 
 export function FloorPlanCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const floorPlan = useStore((s) => s.project.floorPlan);
+
+  const project = useStore((s) => s.project);
+  const tool = useStore((s) => s.tool);
+  const setTool = useStore((s) => s.setTool);
   const viewport = useStore((s) => s.viewport);
   const setViewport = useStore((s) => s.setViewport);
+  const commit = useStore((s) => s.commit);
+  const selectedCameraId = useStore((s) => s.selectedCameraId);
+  const setSelectedCamera = useStore((s) => s.setSelectedCamera);
+  const setCursor = useStore((s) => s.setCursor);
+
+  const { floorPlan, scale, cameras, units } = project;
+  const effectiveScale: Scale = scale ?? { pxPerMeter: FALLBACK_PX_PER_M };
+
+  // Calibration: collected points (image coords) and the pending distance prompt.
+  const [calPoints, setCalPoints] = useState<Point[]>([]);
+  const [askDistance, setAskDistance] = useState(false);
+  const [distanceInput, setDistanceInput] = useState("5");
 
   // Track container size so the stage fills the available area responsively.
   useEffect(() => {
@@ -28,6 +51,14 @@ export function FloorPlanCanvas() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Reset calibration scratch state when leaving the tool.
+  useEffect(() => {
+    if (tool !== "calibrate") {
+      setCalPoints([]);
+      setAskDistance(false);
+    }
+  }, [tool]);
 
   // Decode the embedded data URL into an <img> for Konva.
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -48,11 +79,11 @@ export function FloorPlanCanvas() {
       size.width / floorPlan.width,
       size.height / floorPlan.height,
     );
-    const scale = Math.min(1, fit) * 0.95;
+    const s = Math.min(1, fit) * 0.95;
     setViewport({
-      scale,
-      x: (size.width - floorPlan.width * scale) / 2,
-      y: (size.height - floorPlan.height * scale) / 2,
+      scale: s,
+      x: (size.width - floorPlan.width * s) / 2,
+      y: (size.height - floorPlan.height * s) / 2,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floorPlan, size.width, size.height]);
@@ -60,20 +91,18 @@ export function FloorPlanCanvas() {
   function handleWheel(e: Konva.KonvaEventObject<WheelEvent>) {
     e.evt.preventDefault();
     const stage = e.target.getStage();
-    if (!stage) return;
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
+    const pointer = stage?.getPointerPosition();
+    if (!stage || !pointer) return;
 
     const oldScale = viewport.scale;
     const mousePoint = {
       x: (pointer.x - viewport.x) / oldScale,
       y: (pointer.y - viewport.y) / oldScale,
     };
-    const direction = e.evt.deltaY > 0 ? -1 : 1;
     const factor = 1.08;
     const newScale = Math.min(
       MAX_ZOOM,
-      Math.max(MIN_ZOOM, direction > 0 ? oldScale * factor : oldScale / factor),
+      Math.max(MIN_ZOOM, e.evt.deltaY > 0 ? oldScale / factor : oldScale * factor),
     );
     setViewport({
       scale: newScale,
@@ -82,9 +111,48 @@ export function FloorPlanCanvas() {
     });
   }
 
-  function handleDragEnd(e: Konva.KonvaEventObject<DragEvent>) {
-    setViewport({ x: e.target.x(), y: e.target.y() });
+  function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
+    const stage = e.target.getStage();
+    if (!stage) return;
+    // Image coordinates (stage transform already accounts for pan/zoom).
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return;
+    const clickedEmpty = e.target === stage || e.target.hasName("plan-image");
+
+    if (tool === "camera") {
+      commit((d) => {
+        d.cameras.push(createCamera({ x: pos.x, y: pos.y }, d.cameras.length));
+      });
+      return;
+    }
+
+    if (tool === "calibrate") {
+      if (calPoints.length >= 2) return;
+      const next = [...calPoints, { x: pos.x, y: pos.y }];
+      setCalPoints(next);
+      if (next.length === 2) setAskDistance(true);
+      return;
+    }
+
+    if (tool === "select" && clickedEmpty) {
+      setSelectedCamera(null);
+    }
   }
+
+  function applyCalibration() {
+    const meters = displayToMeters(parseFloat(distanceInput), units);
+    if (calPoints.length === 2 && meters > 0) {
+      const scale = computeScale(calPoints[0], calPoints[1], meters);
+      commit((d) => {
+        d.scale = scale;
+      });
+    }
+    setCalPoints([]);
+    setAskDistance(false);
+    setTool("select");
+  }
+
+  const isSelectMode = tool === "select";
 
   return (
     <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
@@ -96,14 +164,111 @@ export function FloorPlanCanvas() {
           y={viewport.y}
           scaleX={viewport.scale}
           scaleY={viewport.scale}
-          draggable
+          draggable={isSelectMode}
           onWheel={handleWheel}
-          onDragEnd={handleDragEnd}
+          onClick={handleStageClick}
+          onTap={handleStageClick}
+          onMouseMove={(e) => {
+            const pos = e.target.getStage()?.getRelativePointerPosition();
+            if (pos) setCursor({ x: pos.x, y: pos.y });
+          }}
+          onMouseLeave={() => setCursor(null)}
+          onDragEnd={(e) => {
+            // Only the stage itself reports the pan offset.
+            if (e.target === e.target.getStage()) {
+              setViewport({ x: e.target.x(), y: e.target.y() });
+            }
+          }}
+          style={{ cursor: tool === "select" ? "default" : "crosshair" }}
         >
           <Layer>
-            {image && <KonvaImage image={image} listening={false} />}
+            {image && (
+              <KonvaImage image={image} name="plan-image" listening />
+            )}
+
+            {cameras.map((cam) => (
+              <CameraShape
+                key={cam.id}
+                camera={cam}
+                scale={effectiveScale}
+                selected={cam.id === selectedCameraId}
+                draggable={isSelectMode}
+                onSelect={() => setSelectedCamera(cam.id)}
+                onMove={(x, y) =>
+                  commit((d) => {
+                    const c = d.cameras.find((c) => c.id === cam.id);
+                    if (c) c.position = { x, y };
+                  })
+                }
+                onHeading={(deg) =>
+                  commit((d) => {
+                    const c = d.cameras.find((c) => c.id === cam.id);
+                    if (c) c.heading = deg;
+                  })
+                }
+              />
+            ))}
+
+            {/* Calibration in-progress overlay. */}
+            {calPoints.length > 0 && (
+              <>
+                {calPoints.length === 2 && (
+                  <Line
+                    points={[
+                      calPoints[0].x,
+                      calPoints[0].y,
+                      calPoints[1].x,
+                      calPoints[1].y,
+                    ]}
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    strokeScaleEnabled={false}
+                    dash={[6, 4]}
+                  />
+                )}
+                {calPoints.map((p, i) => (
+                  <Circle
+                    key={i}
+                    x={p.x}
+                    y={p.y}
+                    radius={5}
+                    fill="#f59e0b"
+                    strokeScaleEnabled={false}
+                  />
+                ))}
+              </>
+            )}
           </Layer>
         </Stage>
+      )}
+
+      {tool === "calibrate" && !askDistance && (
+        <div className="overlay-hint">
+          Click two points a known distance apart
+          {calPoints.length === 1 ? " — now click the second point" : ""}
+        </div>
+      )}
+
+      {askDistance && (
+        <div className="cal-dialog">
+          <div>Real-world distance between the two points:</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input
+              autoFocus
+              type="number"
+              step="0.1"
+              min="0"
+              value={distanceInput}
+              onChange={(e) => setDistanceInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && applyCalibration()}
+              style={{ width: 90 }}
+            />
+            <span style={{ alignSelf: "center" }}>{unitLabel(units)}</span>
+            <button className="active" onClick={applyCalibration}>
+              Set scale
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

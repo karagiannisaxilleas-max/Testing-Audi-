@@ -8,6 +8,7 @@
 import { produce } from "immer";
 import { create } from "zustand";
 import { createEmptyProject, type Project } from "./project";
+import type { Point } from "../engine/types";
 
 export type ToolMode =
   | "select"
@@ -29,6 +30,9 @@ interface AppState {
   future: Project[];
   tool: ToolMode;
   viewport: Viewport;
+  selectedCameraId: string | null;
+  /** Cursor in image-pixel coords; transient, never recorded in history. */
+  cursor: Point | null;
 
   // --- history ---
   /** Apply an Immer recipe to the project and record it for undo. */
@@ -43,6 +47,8 @@ interface AppState {
   // --- ui ---
   setTool: (tool: ToolMode) => void;
   setViewport: (viewport: Partial<Viewport>) => void;
+  setSelectedCamera: (id: string | null) => void;
+  setCursor: (cursor: Point | null) => void;
 }
 
 const HISTORY_LIMIT = 100;
@@ -53,6 +59,8 @@ export const useStore = create<AppState>((set, get) => ({
   future: [],
   tool: "select",
   viewport: { x: 0, y: 0, scale: 1 },
+  selectedCameraId: null,
+  cursor: null,
 
   commit: (recipe) =>
     set((state) => {
@@ -63,7 +71,7 @@ export const useStore = create<AppState>((set, get) => ({
     }),
 
   replaceProject: (project) =>
-    set({ project, past: [], future: [] }),
+    set({ project, past: [], future: [], selectedCameraId: null }),
 
   undo: () =>
     set((state) => {
@@ -93,4 +101,6 @@ export const useStore = create<AppState>((set, get) => ({
   setTool: (tool) => set({ tool }),
   setViewport: (viewport) =>
     set((state) => ({ viewport: { ...state.viewport, ...viewport } })),
+  setSelectedCamera: (id) => set({ selectedCameraId: id }),
+  setCursor: (cursor) => set({ cursor }),
 }));

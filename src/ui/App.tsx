@@ -4,11 +4,21 @@ import { Toolbar } from "./Toolbar";
 import { Inspector } from "./Inspector";
 import { StatusBar } from "./StatusBar";
 import { FloorPlanCanvas } from "./FloorPlanCanvas";
+import { loadAutosaved, useAutosave } from "./useAutosave";
 
 export function App() {
   const hasPlan = useStore((s) => s.project.floorPlan !== null);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
+  const replaceProject = useStore((s) => s.replaceProject);
+
+  // Restore the last autosaved project once on startup, then keep it saved.
+  useEffect(() => {
+    const restored = loadAutosaved();
+    if (restored) replaceProject(restored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useAutosave();
 
   // Keyboard undo/redo (Cmd/Ctrl+Z, Shift for redo).
   useEffect(() => {

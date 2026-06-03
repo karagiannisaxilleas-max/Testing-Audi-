@@ -7,12 +7,14 @@ import { useStore, type ToolMode } from "../state/store";
 import { useFloorPlanLoader } from "./useFloorPlanLoader";
 import { downloadProject, readProjectFile } from "./projectIO";
 
+// `phase` > 0 marks a tool whose behaviour lands in a later phase; those
+// buttons are disabled and explain themselves via a tooltip.
 const TOOLS: { mode: ToolMode; label: string; phase: number }[] = [
   { mode: "select", label: "Select", phase: 0 },
-  { mode: "calibrate", label: "Calibrate", phase: 1 },
+  { mode: "calibrate", label: "Calibrate", phase: 0 },
+  { mode: "camera", label: "Camera", phase: 0 },
   { mode: "wall", label: "Wall", phase: 2 },
   { mode: "zone", label: "Zone", phase: 4 },
-  { mode: "camera", label: "Camera", phase: 1 },
 ];
 
 export function Toolbar() {
@@ -24,6 +26,7 @@ export function Toolbar() {
   const canRedo = useStore((s) => s.future.length > 0);
   const project = useStore((s) => s.project);
   const replaceProject = useStore((s) => s.replaceProject);
+  const commit = useStore((s) => s.commit);
 
   const loadFloorPlan = useFloorPlanLoader();
   const planInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +56,7 @@ export function Toolbar() {
           <button
             key={t.mode}
             className={tool === t.mode ? "active" : ""}
+            disabled={t.phase > 0}
             title={t.phase > 0 ? `Coming in Phase ${t.phase}` : undefined}
             onClick={() => setTool(t.mode)}
           >
@@ -73,6 +77,21 @@ export function Toolbar() {
       </div>
 
       <div className="spacer" />
+
+      <div className="group">
+        <button
+          title="Toggle metric / imperial units"
+          onClick={() =>
+            commit((d) => {
+              d.units = d.units === "metric" ? "imperial" : "metric";
+            })
+          }
+        >
+          {project.units === "metric" ? "Metric (m)" : "Imperial (ft)"}
+        </button>
+      </div>
+
+      <div className="sep" />
 
       <div className="group">
         <button onClick={() => downloadProject(project)}>Save</button>
