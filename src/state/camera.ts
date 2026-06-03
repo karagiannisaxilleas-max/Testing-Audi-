@@ -1,10 +1,10 @@
 // Camera factory with sensible prosumer defaults.
 //
-// Defaults reflect a common fixed-lens IP camera so the on-screen cone is
-// believable before the user tunes anything. Optics (sensor/lens) are carried
-// now so Phase 3 can derive DORI pixel-density coverage from them; in Phase 1
-// the cone is driven by fovAngleDeg + rangeMeters directly.
+// Defaults reflect a common 4 MP / 4 mm fixed IP camera. FOV and useful range
+// are derived from the optics (see engine/dori) so they stay consistent; tune
+// resolution / focal length and the DORI coverage bands update accordingly.
 
+import { deriveOptics } from "../engine/dori";
 import type { Camera, Point } from "../engine/types";
 
 const PALETTE = [
@@ -21,7 +21,14 @@ export function pickColor(index: number): string {
   return PALETTE[index % PALETTE.length];
 }
 
+const DEFAULT_OPTICS = {
+  sensorWidthMm: 5.37, // 1/2.8"
+  resolutionWidthPx: 2688, // 4 MP (2688 x 1520)
+  focalLengthMm: 4,
+};
+
 export function createCamera(position: Point, index: number): Camera {
+  const { fovAngleDeg, rangeMeters } = deriveOptics(DEFAULT_OPTICS);
   return {
     id: crypto.randomUUID(),
     label: `C${index + 1}`,
@@ -31,8 +38,9 @@ export function createCamera(position: Point, index: number): Camera {
     heading: 0,
     tiltDeg: 15,
     mountHeightMeters: 3,
-    fovAngleDeg: 90,
-    rangeMeters: 12,
+    ...DEFAULT_OPTICS,
+    fovAngleDeg,
+    rangeMeters,
     model: "Generic 4 MP / 4 mm",
   };
 }

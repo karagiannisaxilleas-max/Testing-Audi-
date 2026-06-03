@@ -1,9 +1,11 @@
-// Renders one camera: its FOV cone, a body marker, and (when selected) a
-// rotation handle for setting heading by dragging.
+// Renders one camera: its DORI quality bands (nested coverage from identify
+// out to detect, each blocked by walls), a body marker, and — when selected —
+// a rotation handle for setting heading by dragging.
 
 import { Circle, Group, Line } from "react-konva";
 import type Konva from "konva";
 import { computeCoverage } from "../engine/coverage";
+import { DORI_LEVELS, doriDistances, type DoriLevel } from "../engine/dori";
 import type { Camera, Scale, Wall } from "../engine/types";
 import { toRadians } from "../engine/geometry";
 
@@ -18,6 +20,15 @@ interface Props {
   onHeading: (deg: number) => void;
 }
 
+// Denser quality = more opaque. Bands are drawn detect-first (largest, bottom)
+// so identify ends up on top; overlap naturally reads as higher confidence.
+const BAND_OPACITY: Record<DoriLevel, number> = {
+  identify: 0.22,
+  recognize: 0.16,
+  observe: 0.12,
+  detect: 0.09,
+};
+
 export function CameraShape({
   camera,
   scale,
@@ -28,13 +39,21 @@ export function CameraShape({
   onMove,
   onHeading,
 }: Props) {
-  // Coverage is wall-aware; points are returned in absolute image coords, so
-  // we express them relative to the group origin (the camera position). During
-  // a drag the group translates this cached shape; it re-occludes on release.
-  const cone = computeCoverage(camera, scale, walls).polygon.flatMap((p) => [
-    p.x - camera.position.x,
-    p.y - camera.position.y,
-  ]);
+  const distances = doriDistances(camera);
+
+  // One occluded polygon per DORI level, clipped to that level's distance.
+  // Coordinates are relative to the group origin (the camera position) so a
+  // drag translates the cached shape; it re-occludes on release.
+  const bands = [...DORI_LEVELS]
+    .reverse() // detect -> identify (draw order: large to small)
+    .map((level) => {
+      const banded: Camera = { ...camera, rangeMeters: distances[level] };
+      const points = computeCoverage(banded, scale, walls).polygon.flatMap((p) => [
+        p.x - camera.position.x,
+        p.y - camera.position.y,
+      ]);
+      return { level, points };
+    });
 
   const rangePx = camera.rangeMeters * scale.pxPerMeter;
   const headingRad = toRadians(camera.heading);
@@ -45,9 +64,7 @@ export function CameraShape({
 
   function handleDragMove(e: Konva.KonvaEventObject<DragEvent>) {
     const node = e.target;
-    const dx = node.x();
-    const dy = node.y();
-    onHeading((Math.atan2(dy, dx) * 180) / Math.PI);
+    onHeading((Math.atan2(node.y(), node.x()) * 180) / Math.PI);
   }
 
   return (
@@ -59,16 +76,20 @@ export function CameraShape({
       onTap={onSelect}
       onDragEnd={(e) => onMove(e.target.x(), e.target.y())}
     >
-      {/* Coverage cone (coordinates are relative to the group origin). */}
-      <Line
-        points={cone}
-        closed
-        fill={camera.color}
-        opacity={0.22}
-        stroke={camera.color}
-        strokeWidth={selected ? 1.5 : 1}
-        strokeScaleEnabled={false}
-      />
+      {bands.map(({ level, points }) => (
+        <Line
+          key={level}
+          points={points}
+          closed
+          fill={camera.color}
+          opacity={BAND_OPACITY[level]}
+          stroke={level === "detect" ? camera.color : undefined}
+          strokeWidth={selected ? 1.25 : 0.75}
+          strokeScaleEnabled={false}
+          listening={false}
+        />
+      ))}
+
       {/* Camera body. */}
       <Circle
         radius={7}

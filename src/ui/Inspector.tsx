@@ -4,11 +4,34 @@
 import { useStore } from "../state/store";
 import type { Camera } from "../engine/types";
 import {
+  DORI_LEVELS,
+  DORI_PX_PER_M,
+  deriveOptics,
+  doriDistances,
+  type DoriLevel,
+} from "../engine/dori";
+import {
   displayToMeters,
   formatLength,
   metersToDisplay,
   unitLabel,
 } from "./units";
+
+// Common horizontal resolutions by marketed megapixel count.
+const RESOLUTION_PRESETS: { label: string; px: number }[] = [
+  { label: "2 MP (1080p)", px: 1920 },
+  { label: "4 MP", px: 2688 },
+  { label: "5 MP", px: 2592 },
+  { label: "8 MP (4K)", px: 3840 },
+  { label: "12 MP", px: 4000 },
+];
+
+const LEVEL_LABEL: Record<DoriLevel, string> = {
+  identify: "Identify",
+  recognize: "Recognize",
+  observe: "Observe",
+  detect: "Detect",
+};
 
 export function Inspector() {
   const project = useStore((s) => s.project);
@@ -119,6 +142,18 @@ function CameraEditor({
 }) {
   // Normalize heading into 0..360 for display.
   const heading = ((camera.heading % 360) + 360) % 360;
+  const distances = doriDistances(camera);
+
+  // Recompute the optics-derived FOV and range whenever an optic changes.
+  function setOptic(patch: Partial<Pick<Camera, "sensorWidthMm" | "resolutionWidthPx" | "focalLengthMm">>) {
+    const optics = {
+      sensorWidthMm: camera.sensorWidthMm,
+      resolutionWidthPx: camera.resolutionWidthPx,
+      focalLengthMm: camera.focalLengthMm,
+      ...patch,
+    };
+    onChange({ ...patch, ...deriveOptics(optics) });
+  }
 
   return (
     <>
@@ -143,24 +178,34 @@ function CameraEditor({
         onChange={(v) => onChange({ heading: v })}
       />
 
-      <Slider
-        label="Field of view"
-        value={camera.fovAngleDeg}
-        min={10}
-        max={360}
-        step={1}
-        suffix="°"
-        onChange={(v) => onChange({ fovAngleDeg: v })}
-      />
+      <div className="field">
+        <div className="label">Resolution</div>
+        <select
+          style={{ width: "100%" }}
+          value={camera.resolutionWidthPx}
+          onChange={(e) => setOptic({ resolutionWidthPx: parseInt(e.target.value, 10) })}
+        >
+          {RESOLUTION_PRESETS.every((p) => p.px !== camera.resolutionWidthPx) && (
+            <option value={camera.resolutionWidthPx}>
+              {camera.resolutionWidthPx}px (custom)
+            </option>
+          )}
+          {RESOLUTION_PRESETS.map((p) => (
+            <option key={p.px} value={p.px}>
+              {p.label} — {p.px}px
+            </option>
+          ))}
+        </select>
+      </div>
 
       <Slider
-        label="Range"
-        value={Math.round(metersToDisplay(camera.rangeMeters, units) * 10) / 10}
-        min={1}
-        max={metersToDisplay(60, units)}
-        step={0.5}
-        suffix={` ${unitLabel(units)}`}
-        onChange={(v) => onChange({ rangeMeters: displayToMeters(v, units) })}
+        label="Focal length"
+        value={Math.round(camera.focalLengthMm * 10) / 10}
+        min={2.8}
+        max={25}
+        step={0.1}
+        suffix=" mm"
+        onChange={(v) => setOptic({ focalLengthMm: v })}
       />
 
       <Slider
@@ -172,6 +217,26 @@ function CameraEditor({
         suffix={` ${unitLabel(units)}`}
         onChange={(v) => onChange({ mountHeightMeters: displayToMeters(v, units) })}
       />
+
+      <div className="field">
+        <div className="label">
+          <span>Field of view</span>
+          <span>{camera.fovAngleDeg.toFixed(1)}°</span>
+        </div>
+        <div className="dori-table">
+          {DORI_LEVELS.map((level) => (
+            <div className="dori-row" key={level}>
+              <span className="dori-name">{LEVEL_LABEL[level]}</span>
+              <span className="dori-px">{DORI_PX_PER_M[level]} px/m</span>
+              <span className="dori-dist">{formatLength(distances[level], units, 1)}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
+          Coverage bands show identify (densest) out to detect. Range is derived
+          from optics, not set by hand.
+        </div>
+      </div>
 
       <button
         className="danger"

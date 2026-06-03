@@ -4,9 +4,10 @@
 // model evolves (see the roadmap in SPEC.md). Bump it and add a migration when
 // the shape changes incompatibly.
 
+import { deriveOptics } from "../engine/dori";
 import type { Camera, Scale, Wall, Zone } from "../engine/types";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Units = "metric" | "imperial";
 
@@ -52,12 +53,43 @@ export function migrateProject(raw: unknown): Project {
   if (typeof raw !== "object" || raw === null) {
     throw new Error("Invalid project file");
   }
-  const p = raw as Partial<Project>;
-  if (p.schemaVersion === SCHEMA_VERSION) {
-    return p as Project;
+  const p = raw as Partial<Project> & { schemaVersion?: number };
+
+  // Stepwise migrations, lowest version first.
+  let project = p;
+  if ((project.schemaVersion ?? 1) === 1) {
+    project = migrateV1toV2(project);
   }
-  // Future: stepwise migrations keyed on p.schemaVersion go here.
+
+  if (project.schemaVersion === SCHEMA_VERSION) {
+    return project as Project;
+  }
   throw new Error(
-    `Unsupported project schemaVersion: ${String(p.schemaVersion)}`,
+    `Unsupported project schemaVersion: ${String(project.schemaVersion)}`,
   );
+}
+
+/**
+ * v1 cameras set fovAngleDeg/rangeMeters by hand and had no optics. Back-fill
+ * optics consistent with the stored FOV (focal length chosen to reproduce it on
+ * a default sensor) so existing cones are preserved, then bump the version.
+ */
+function migrateV1toV2(p: Partial<Project> & { schemaVersion?: number }): Project {
+  const sensorWidthMm = 5.37;
+  const resolutionWidthPx = 2688;
+  const cameras = (p.cameras ?? []).map((c) => {
+    const cam = c as Camera & { fovAngleDeg?: number; rangeMeters?: number };
+    const fovDeg = cam.fovAngleDeg ?? 90;
+    // focal that reproduces the stored FOV: f = sensor / (2 tan(fov/2))
+    const focalLengthMm =
+      sensorWidthMm / (2 * Math.tan((fovDeg * Math.PI) / 180 / 2));
+    const optics = { sensorWidthMm, resolutionWidthPx, focalLengthMm };
+    const { fovAngleDeg, rangeMeters } = deriveOptics(optics);
+    return { ...cam, ...optics, fovAngleDeg, rangeMeters } as Camera;
+  });
+  return {
+    ...(p as Project),
+    schemaVersion: 2,
+    cameras,
+  };
 }

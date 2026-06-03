@@ -6,6 +6,7 @@
 
 import { writeFileSync } from "node:fs";
 import { computeCoverage } from "../src/engine/coverage";
+import { DORI_LEVELS, deriveOptics, doriDistances } from "../src/engine/dori";
 import type { Camera, Scale, Wall } from "../src/engine/types";
 
 const W = 800;
@@ -36,56 +37,62 @@ const walls: Wall[] = [
   },
 ];
 
+function makeCamera(
+  id: string,
+  label: string,
+  color: string,
+  position: { x: number; y: number },
+  heading: number,
+  focalLengthMm: number,
+): Camera {
+  const optics = { sensorWidthMm: 5.37, resolutionWidthPx: 2688, focalLengthMm };
+  const { fovAngleDeg, rangeMeters } = deriveOptics(optics);
+  return {
+    id,
+    label,
+    color,
+    position,
+    type: "fixed",
+    heading,
+    tiltDeg: 15,
+    mountHeightMeters: 3,
+    ...optics,
+    fovAngleDeg,
+    rangeMeters,
+    model: "Generic",
+  };
+}
+
 const cameras: Camera[] = [
-  {
-    id: "c1",
-    label: "C1",
-    color: "#3b82f6",
-    position: { x: 90, y: 90 },
-    type: "fixed",
-    heading: 35,
-    tiltDeg: 15,
-    mountHeightMeters: 3,
-    fovAngleDeg: 90,
-    rangeMeters: 70,
-    model: "Generic",
-  },
-  {
-    id: "c2",
-    label: "C2",
-    color: "#22c55e",
-    position: { x: 710, y: 90 },
-    type: "fixed",
-    heading: 135,
-    tiltDeg: 15,
-    mountHeightMeters: 3,
-    fovAngleDeg: 90,
-    rangeMeters: 70,
-    model: "Generic",
-  },
-  {
-    id: "c3",
-    label: "C3",
-    color: "#f59e0b",
-    position: { x: 710, y: 440 },
-    type: "fixed",
-    heading: 215,
-    tiltDeg: 15,
-    mountHeightMeters: 3,
-    fovAngleDeg: 100,
-    rangeMeters: 80,
-    model: "Generic",
-  },
+  makeCamera("c1", "C1", "#3b82f6", { x: 90, y: 90 }, 35, 4),
+  makeCamera("c2", "C2", "#22c55e", { x: 710, y: 90 }, 135, 4),
+  makeCamera("c3", "C3", "#f59e0b", { x: 710, y: 440 }, 215, 6),
 ];
+
+const BAND_OPACITY: Record<string, number> = {
+  identify: 0.22,
+  recognize: 0.16,
+  observe: 0.12,
+  detect: 0.09,
+};
 
 function poly(points: { x: number; y: number }[]): string {
   return points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 }
 
+// Nested DORI bands per camera: detect (largest, faint) to identify (smallest).
 const cones = cameras
   .map((cam) => {
-    const { polygon } = computeCoverage(cam, scale, walls);
-    return `  <polygon points="${poly(polygon)}" fill="${cam.color}" fill-opacity="0.28" stroke="${cam.color}" stroke-opacity="0.7" stroke-width="1"/>`;
+    const distances = doriDistances(cam);
+    return [...DORI_LEVELS]
+      .reverse()
+      .map((level) => {
+        const banded = { ...cam, rangeMeters: distances[level] };
+        const { polygon } = computeCoverage(banded, scale, walls);
+        const stroke = level === "detect" ? ` stroke="${cam.color}" stroke-opacity="0.5" stroke-width="1"` : "";
+        return `  <polygon points="${poly(polygon)}" fill="${cam.color}" fill-opacity="${BAND_OPACITY[level]}"${stroke}/>`;
+      })
+      .join("\n");
   })
   .join("\n");
 
@@ -106,7 +113,7 @@ const camDots = cameras
 
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="#0a0c10"/>
-  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">CCTV coverage — engine demo: cones are blocked by walls (note the shadow behind the partition)</text>
+  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">CCTV coverage — DORI quality bands (densest = identify, near the camera) clipped by walls</text>
 ${cones}
 ${wallPaths}
 ${camDots}

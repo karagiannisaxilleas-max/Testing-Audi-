@@ -42,9 +42,19 @@ export interface Camera {
   /** Degrees below horizontal (used by the height/tilt footprint in Phase 4). */
   tiltDeg: number;
   mountHeightMeters: number;
-  /** Horizontal field of view, degrees. In the MVP this is set directly. */
+
+  // --- Optics (Phase 3). The horizontal FOV and useful range are derived from
+  // these, so fovAngleDeg/rangeMeters are kept in sync rather than set by hand. ---
+  /** Imaging sensor width in millimetres (e.g. 5.37 for a 1/2.8" sensor). */
+  sensorWidthMm: number;
+  /** Horizontal resolution in pixels (e.g. 2688 for a 4 MP camera). */
+  resolutionWidthPx: number;
+  /** Lens focal length in millimetres. */
+  focalLengthMm: number;
+
+  /** Horizontal field of view, degrees. Derived from sensor + focal length. */
   fovAngleDeg: number;
-  /** Effective useful distance in meters. MVP heuristic; Pro derives from DORI. */
+  /** Useful outer distance in meters. Derived from the DORI detect threshold. */
   rangeMeters: number;
   model?: string;
 }
