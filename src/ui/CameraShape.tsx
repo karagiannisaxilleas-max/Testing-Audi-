@@ -3,13 +3,14 @@
 
 import { Circle, Group, Line } from "react-konva";
 import type Konva from "konva";
-import { sectorPolygon } from "../engine/coverage";
-import type { Camera, Scale } from "../engine/types";
+import { computeCoverage } from "../engine/coverage";
+import type { Camera, Scale, Wall } from "../engine/types";
 import { toRadians } from "../engine/geometry";
 
 interface Props {
   camera: Camera;
   scale: Scale;
+  walls: Wall[];
   selected: boolean;
   draggable: boolean;
   onSelect: () => void;
@@ -20,13 +21,17 @@ interface Props {
 export function CameraShape({
   camera,
   scale,
+  walls,
   selected,
   draggable,
   onSelect,
   onMove,
   onHeading,
 }: Props) {
-  const cone = sectorPolygon(camera, scale).flatMap((p) => [
+  // Coverage is wall-aware; points are returned in absolute image coords, so
+  // we express them relative to the group origin (the camera position). During
+  // a drag the group translates this cached shape; it re-occludes on release.
+  const cone = computeCoverage(camera, scale, walls).polygon.flatMap((p) => [
     p.x - camera.position.x,
     p.y - camera.position.y,
   ]);

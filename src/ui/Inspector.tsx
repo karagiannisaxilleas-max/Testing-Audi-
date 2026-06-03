@@ -49,7 +49,22 @@ export function Inspector() {
             ? `${project.scale.pxPerMeter.toFixed(1)} px/m`
             : "not calibrated"}
         </div>
+        <div>Walls: {project.walls.length}</div>
       </dl>
+
+      {project.walls.length > 0 && (
+        <button
+          className="danger"
+          style={{ width: "100%", marginBottom: 14 }}
+          onClick={() =>
+            commit((d) => {
+              d.walls = [];
+            })
+          }
+        >
+          Clear walls
+        </button>
+      )}
 
       {selected ? (
         <CameraEditor

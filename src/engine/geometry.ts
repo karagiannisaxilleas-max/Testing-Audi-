@@ -59,6 +59,30 @@ export function polygonArea(poly: Point[]): number {
   return Math.abs(signedArea(poly));
 }
 
+export interface Segment {
+  a: Point;
+  b: Point;
+}
+
+/**
+ * Even-odd ray-casting point-in-polygon test. Polygon is an array of vertices
+ * (open; the closing edge is implied). Points exactly on the boundary may
+ * return either result.
+ */
+export function pointInPolygon(point: Point, poly: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const pi = poly[i];
+    const pj = poly[j];
+    const intersect =
+      pi.y > point.y !== pj.y > point.y &&
+      point.x <
+        ((pj.x - pi.x) * (point.y - pi.y)) / (pj.y - pi.y) + pi.x;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 export interface RaySegmentHit {
   /** Parametric distance along the ray (>= 0). */
   t: number;

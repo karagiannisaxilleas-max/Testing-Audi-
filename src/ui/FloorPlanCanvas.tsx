@@ -40,6 +40,9 @@ export function FloorPlanCanvas() {
   const [askDistance, setAskDistance] = useState(false);
   const [distanceInput, setDistanceInput] = useState("5");
 
+  // Wall drawing: vertices of the polyline currently being drawn.
+  const [draftWall, setDraftWall] = useState<Point[]>([]);
+
   // Track container size so the stage fills the available area responsively.
   useEffect(() => {
     const el = containerRef.current;
@@ -52,13 +55,38 @@ export function FloorPlanCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  // Reset calibration scratch state when leaving the tool.
+  // Reset tool scratch state when leaving the relevant tool.
   useEffect(() => {
     if (tool !== "calibrate") {
       setCalPoints([]);
       setAskDistance(false);
     }
+    if (tool !== "wall") setDraftWall([]);
   }, [tool]);
+
+  // Finish the wall on Enter, cancel on Escape.
+  function finishWall(vertices: Point[]) {
+    if (vertices.length >= 2) {
+      commit((d) => {
+        d.walls.push({
+          id: crypto.randomUUID(),
+          points: vertices,
+          occlusion: "full",
+        });
+      });
+    }
+    setDraftWall([]);
+  }
+  useEffect(() => {
+    if (tool !== "wall") return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Enter") finishWall(draftWall);
+      else if (e.key === "Escape") setDraftWall([]);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, draftWall]);
 
   // Decode the embedded data URL into an <img> for Konva.
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -134,6 +162,11 @@ export function FloorPlanCanvas() {
       return;
     }
 
+    if (tool === "wall") {
+      setDraftWall((prev) => [...prev, { x: pos.x, y: pos.y }]);
+      return;
+    }
+
     if (tool === "select" && clickedEmpty) {
       setSelectedCamera(null);
     }
@@ -168,6 +201,9 @@ export function FloorPlanCanvas() {
           onWheel={handleWheel}
           onClick={handleStageClick}
           onTap={handleStageClick}
+          onDblClick={() => {
+            if (tool === "wall") finishWall(draftWall);
+          }}
           onMouseMove={(e) => {
             const pos = e.target.getStage()?.getRelativePointerPosition();
             if (pos) setCursor({ x: pos.x, y: pos.y });
@@ -186,11 +222,50 @@ export function FloorPlanCanvas() {
               <KonvaImage image={image} name="plan-image" listening />
             )}
 
+            {/* Walls (full-height occluders). */}
+            {project.walls.map((w) => (
+              <Line
+                key={w.id}
+                points={w.points.flatMap((p) => [p.x, p.y])}
+                stroke="#e6e8ec"
+                strokeWidth={3}
+                strokeScaleEnabled={false}
+                lineCap="round"
+                lineJoin="round"
+                listening={false}
+              />
+            ))}
+
+            {/* Wall currently being drawn. */}
+            {draftWall.length > 0 && (
+              <>
+                <Line
+                  points={draftWall.flatMap((p) => [p.x, p.y])}
+                  stroke="#22c55e"
+                  strokeWidth={3}
+                  strokeScaleEnabled={false}
+                  dash={[8, 4]}
+                  lineCap="round"
+                />
+                {draftWall.map((p, i) => (
+                  <Circle
+                    key={i}
+                    x={p.x}
+                    y={p.y}
+                    radius={4}
+                    fill="#22c55e"
+                    strokeScaleEnabled={false}
+                  />
+                ))}
+              </>
+            )}
+
             {cameras.map((cam) => (
               <CameraShape
                 key={cam.id}
                 camera={cam}
                 scale={effectiveScale}
+                walls={project.walls}
                 selected={cam.id === selectedCameraId}
                 draggable={isSelectMode}
                 onSelect={() => setSelectedCamera(cam.id)}
@@ -246,6 +321,12 @@ export function FloorPlanCanvas() {
         <div className="overlay-hint">
           Click two points a known distance apart
           {calPoints.length === 1 ? " — now click the second point" : ""}
+        </div>
+      )}
+
+      {tool === "wall" && (
+        <div className="overlay-hint">
+          Click to add wall points · double-click or Enter to finish · Esc to cancel
         </div>
       )}
 

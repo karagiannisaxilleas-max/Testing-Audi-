@@ -13,7 +13,7 @@ const TOOLS: { mode: ToolMode; label: string; phase: number }[] = [
   { mode: "select", label: "Select", phase: 0 },
   { mode: "calibrate", label: "Calibrate", phase: 0 },
   { mode: "camera", label: "Camera", phase: 0 },
-  { mode: "wall", label: "Wall", phase: 2 },
+  { mode: "wall", label: "Wall", phase: 0 },
   { mode: "zone", label: "Zone", phase: 4 },
 ];
 
