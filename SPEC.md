@@ -1,190 +1,242 @@
 # CCTV Camera Positioning Tool — Design Spec
 
 A browser-based tool for planning CCTV camera layouts on a building floor plan.
-Load a floor-plan image, calibrate it to real-world scale, place cameras,
-set their field-of-view, and see realistic coverage that is blocked by walls —
-so you can find and eliminate blind spots before buying or mounting hardware.
+Load a floor-plan image, calibrate it to real-world scale, place cameras, and see
+**trustworthy** coverage — graded by image quality and blocked by walls — so you can
+eliminate blind spots and justify a purchase *before* buying or mounting hardware.
 
-**Decisions locked in for v1:**
-- Coverage accuracy: **real-world scale + wall occlusion** (cones stop at walls; ranges in meters)
-- Floor-plan input: **image upload (PNG/JPG)**
-- Delivery: **single-page web app**, no backend required
+This spec is organized in three ambition tiers so there is a buildable path through the
+full vision:
+
+- **MVP** — the smallest thing that is genuinely useful and demoable.
+- **Pro** — what makes the output trustworthy enough to spend money on.
+- **Perfect** — the north-star. Includes research-grade items, explicitly fenced as risky/optional.
+
+---
+
+## 0. What "perfect" means here
+
+Perfection is not the longest feature list. It is:
+
+1. **Validated accuracy** — predicted coverage matches what you measure on-site with a real camera, within a stated tolerance.
+2. **Trustworthy output** — the result justifies a purchase order and survives a client's/installer's scrutiny.
+3. **Frictionless** — the target user finishes the job without fighting the tool.
+4. **Reliable** — tested, fast, never loses work, degrades gracefully.
+
+Every feature below is justified by one of these. Where a feature can't be validated by
+software alone (needs real hardware) or is algorithmically open-ended, it is fenced as
+**[RESEARCH-GRADE]**.
+
+### Target users (scope must serve one well before the next)
+- **Primary (MVP/Pro):** prosumer / small-business installer planning 1–30 cameras on one or a few floors.
+- **Secondary (Perfect):** professional security integrator bidding multi-building sites.
+
+Decisions locked in for v1: real-world scale + wall occlusion; image upload (PNG/JPG);
+single-page app, no backend required.
 
 ---
 
 ## 1. Goals & non-goals
 
-### Goals
-- Load a floor-plan image as a drawing background.
-- Calibrate scale ("this line is 5 m") so all distances are metric.
-- Trace walls so they can block camera coverage.
-- Place, move, rotate, and delete cameras.
-- Per-camera controls: field-of-view angle, range (or lens focal length), mounting height.
-- Render each camera's coverage as a sector (cone) clipped by walls (line-of-sight).
-- Aggregate coverage view + blind-spot highlighting.
-- Save / load a project (JSON) and export an annotated image / PDF.
+### MVP goals
+- Load a floor-plan image as a drawing background; pan/zoom.
+- Calibrate scale ("this line is 5 m") so all distances are metric (and imperial-toggle).
+- Trace walls so they can block coverage.
+- Place, move, rotate, delete cameras with FOV angle, range, mount height.
+- Render each camera's coverage as a sector clipped by walls (line-of-sight).
+- Save/load a project (versioned JSON) + autosave; export annotated PNG.
 
-### Non-goals (v1)
-- Automatic wall detection from the image (user traces walls manually).
-- Automatic camera placement optimization.
-- 3D modeling, multi-floor stitching, live video, vendor catalogs/pricing.
-- Accounts, cloud sync, collaboration.
+### Pro goals
+- **DORI pixel-density coverage** (quality gradient, not binary) derived from resolution + lens + sensor.
+- Height + tilt → correct ground footprint and near dead-zone.
+- Aggregate coverage, overlap heatmap, blind-spot + no-cover/privacy-zone highlighting.
+- Camera schedule + bill of materials; storage/bandwidth and PoE/NVR-channel calculators.
+- PDF report; undo/redo; lens & camera presets.
 
-These are noted in the roadmap as later phases.
+### Perfect goals (north-star)
+- Physically faithful optics, IR/low-light range, glare warnings, partial occluders, glass.
+- Camera types: fixed, fisheye/360, PTZ time-coverage, multi-sensor, thermal.
+- 3D view; multi-floor/multi-building; mobile site-survey companion; collaboration/sharing.
+- **[RESEARCH-GRADE]** auto-placement optimization; AI floor-plan/wall detection; field-validated accuracy harness.
+
+### Non-goals (all tiers)
+- Live video / VMS integration; accounts & cloud sync beyond share links (until Perfect).
+- Pricing feeds that require paid vendor APIs (use spec sheets / generic mode).
 
 ---
 
 ## 2. Tech stack
 
-| Concern            | Choice                              | Why |
-|--------------------|-------------------------------------|-----|
-| Framework          | React + TypeScript + Vite           | Fast, typed, easy to host as static files |
-| Canvas / shapes    | Konva.js (`react-konva`)            | Built-in drag, rotate, hit-testing for shapes |
-| Geometry           | Custom + a small lib (e.g. `martinez`/`polygon-clipping`) | Sector clipping, ray casting, occlusion |
-| State              | Zustand                             | Lightweight, no boilerplate |
-| Persistence        | JSON download/upload + `localStorage` autosave | No backend needed |
-| Export             | Canvas `toDataURL` (PNG); `jsPDF` (PDF) | Client-side |
+| Concern         | Choice                                   | Why |
+|-----------------|------------------------------------------|-----|
+| Framework       | React + TypeScript + Vite                | Fast, typed, static-hostable |
+| Canvas/shapes   | Konva.js (`react-konva`)                 | Drag, rotate, hit-testing |
+| Geometry        | **Headless `coverage-engine` module** + `polygon-clipping` | Pure, testable, worker-able |
+| Heavy compute   | Web Worker (Comlink)                     | Keep UI thread free for heatmaps |
+| State           | Zustand + Immer + command/patch history  | Lightweight store **with undo/redo from day one** |
+| Persistence     | Versioned JSON download/upload + `localStorage` autosave | No backend |
+| Export          | Canvas `toDataURL` (PNG); `jsPDF` + `jspdf-autotable` (PDF report) | Client-side |
+| 3D (Perfect)    | three.js                                 | Walk-the-space view |
+| Tests           | Vitest (engine golden cases) + Playwright (smoke) | Correctness is the product |
 
-Everything runs client-side and deploys as static files (GitHub Pages / Netlify).
+Everything runs client-side; deploys as static files (GitHub Pages / Netlify).
+
+### Architectural rule (non-negotiable)
+The **`coverage-engine`** is a pure TypeScript package with **no React/Konva/DOM imports**.
+Input: cameras + walls + scale + zones. Output: coverage polygons, quality grids, blind
+spots, metrics. This makes the math unit-testable, worker-friendly, and reusable. UI converts
+engine output to canvas shapes at the boundary.
 
 ---
 
-## 3. Core concepts & data model
+## 3. Data model
 
 ```ts
 interface Project {
+  schemaVersion: number;        // migrations live in /engine/migrations
   id: string;
   name: string;
-  floorPlan: {
-    imageDataUrl: string;   // embedded base64 image
-    width: number;          // natural px
-    height: number;
-  };
-  scale: {
-    // two points the user clicked + the real distance between them
-    pxPerMeter: number;     // derived; single source of truth for unit conversion
-  } | null;
+  units: "metric" | "imperial"; // display only; engine works in meters
+  floorPlan: { imageDataUrl: string; width: number; height: number };
+  scale: { pxPerMeter: number } | null;   // single source of truth for units
   walls: Wall[];
+  zones: Zone[];                // areas-of-interest and no-cover/privacy zones
   cameras: Camera[];
 }
 
-interface Wall {
-  id: string;
-  points: Point[];          // polyline in image-px coordinates
-}
+interface Wall   { id: string; points: Point[]; occlusion: "full" | "partial" | "glass"; }
+interface Zone   { id: string; kind: "interest" | "no-cover"; polygon: Point[]; label: string; }
 
 interface Camera {
-  id: string;
-  label: string;
-  position: Point;          // image-px
-  heading: number;          // degrees, direction the lens points
-  fovAngle: number;         // degrees, horizontal field of view
-  rangeMeters: number;      // effective useful distance
+  id: string; label: string; color: string;
+  position: Point;            // image-px
+  type: "fixed" | "fisheye" | "ptz" | "multi";   // MVP uses "fixed"
+  heading: number;            // deg, lens azimuth
+  tiltDeg: number;            // deg below horizontal (Pro)
   mountHeightMeters: number;
-  model?: string;           // optional free-text/preset name
-  color: string;
+  // Optics — Pro derives quality from these; MVP may set fovAngle/range directly
+  sensor: { widthMm: number; resolutionPx: { w: number; h: number } };
+  lens:   { focalLengthMm: number };
+  fovAngleDeg: number;        // derived from sensor+lens, or set directly in MVP
+  rangeMeters: number;        // MVP: heuristic; Pro: derived from DORI threshold
+  model?: string;             // preset name
 }
 
 interface Point { x: number; y: number; }
 ```
 
-**Single source of truth for units:** `pxPerMeter`. UI shows meters; geometry math
-converts to pixels at the boundary. Camera `rangeMeters` ↔ pixel radius via this factor.
-
-### Lens / FOV model
-Two equivalent ways to express FOV; the UI lets the user pick:
-- **Direct**: enter FOV angle (deg) + range (m).
-- **By lens**: enter sensor width + focal length → `fovAngle = 2·atan(sensorWidth / (2·focalLength))`.
-  Provide presets (e.g. 2.8 mm ≈ 90°, 4 mm ≈ 70°, 6 mm ≈ 50° on a common 1/2.8" sensor).
-
-Range is a planning heuristic (identification/recognition/detection distance), not a hard
-optical limit — documented as such in the UI tooltip.
+**Single source of truth for units:** `pxPerMeter`. UI shows metric/imperial; engine math is
+in meters; conversion happens only at the boundary.
 
 ---
 
-## 4. Coverage geometry (the interesting part)
+## 4. The coverage engine (the heart of the tool)
 
-For each camera we compute a **visibility polygon** clipped to its FOV sector:
+### 4.1 Visibility / occlusion (MVP)
+For each camera compute a **visibility polygon** clipped to its FOV sector:
+1. Build sector: apex at `position`, `heading ± fovAngle/2`, radius `rangeMeters · pxPerMeter`.
+2. Collect wall segments within the sector's bounding circle (spatial cull).
+3. Ray-cast to every wall endpoint in-sector (+ slight ±ε offsets for silhouettes, + the two sector edges).
+4. Nearest wall hit per ray, clamped to range.
+5. Sort hits by angle → visibility polygon → intersect with sector wedge = coverage polygon.
 
-1. Build the sector: apex at `camera.position`, from `heading − fovAngle/2` to
-   `heading + fovAngle/2`, radius = `rangeMeters · pxPerMeter`.
-2. Collect wall segments that fall within the sector's bounding circle.
-3. **Ray casting**: cast rays to every wall endpoint inside the sector (plus the two
-   sector edges), and slightly-offset rays around each endpoint to catch silhouettes.
-4. For each ray, find the nearest wall intersection; clamp to range.
-5. Sort hit points by angle, build the visibility polygon (standard 2D visibility / "raycasting
-   shadows" algorithm).
-6. Intersect that polygon with the sector wedge → final coverage polygon for that camera.
+`partial` occluders reduce quality past them rather than fully block; `glass` blocks nothing
+optically but flags glare (Perfect). Aggregate coverage = union; blind spots = interest-region
+− coverage; no-cover violations = coverage ∩ no-cover zones.
 
-**Aggregate coverage** = union of all camera polygons (via `polygon-clipping`).
-**Blind spots** = (interior floor region) − (aggregate coverage), optionally constrained to
-a user-drawn "area of interest" boundary.
+### 4.2 DORI pixel-density coverage (Pro) — the trust upgrade
+Instead of a hand-typed range, **derive** coverage quality from optics. Horizontal pixel
+density at ground distance `d`:
 
-Performance: recompute a camera's polygon only when that camera or a nearby wall changes
-(dirty flagging). For typical plans (tens of cameras, hundreds of wall segments) this is
-real-time on the main thread; if it ever isn't, move it to a Web Worker.
+```
+fovAngle = 2·atan(sensorWidth / (2·focalLength))
+horizontalSceneWidth(d) = 2·d·tan(fovAngle/2)
+pxPerMeter(d) = resolution.w / horizontalSceneWidth(d)
+```
 
-This is the part to prototype first to de-risk the project — see Phase 2.
+Map to DORI bands (EN 62676-4): **Identify ≥250 px/m, Recognize ≥125, Observe ≥62.5,
+Detect ≥25**. The cone becomes a **color-banded gradient**; "range" is the distance where
+quality drops below the user's chosen minimum (not a guess). Worked example documented in
+`/docs/dori-example.md`.
+
+### 4.3 Height + tilt footprint (Pro)
+A wall/ceiling camera at height `h`, tilt `θ` below horizontal, vertical FOV `vfov`:
+- near ground edge = `h / tan(θ + vfov/2)`, far = `h / tan(θ − vfov/2)` (∞ when ray ≥ horizontal).
+- yields a **near dead-zone** under the camera. The 2D footprint uses these near/far radii
+  instead of starting the wedge at the lens. Top-down view shows the projected footprint;
+  3D view (Perfect) shows the true frustum.
+
+### 4.4 Performance & correctness
+- Dirty-flag recompute: only recompute a camera when it or a nearby wall/zone changes.
+- Move heatmap/union to a **Web Worker** once camera count is high.
+- **Golden tests** (Vitest): square room, L-room, single pillar, two-camera overlap, camera-in-corner — assert polygon area & blind-spot count within tolerance.
 
 ---
 
-## 5. UI layout
+## 5. UI
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ Toolbar:  [Load Plan] [Calibrate] [Wall] [Camera] [Select] │
-│           [Coverage ▢] [Blind spots ▢]   [Save][Load][Export]│
+│ [Load] [Calibrate] [Wall] [Zone] [Camera] [Select] | [Undo][Redo] │
+│ View: Coverage▢ Quality(DORI)▢ Heatmap▢ Blindspots▢ No-cover▢ 3D▢  │
+│ [Save][Load][Export PNG][Export PDF]                       │
 ├──────────────────────────────────────────┬────────────────┤
-│                                           │  Inspector      │
-│                                           │  ─────────────  │
-│            Canvas (floor plan,            │  Camera "C3"    │
-│            walls, cameras, coverage)      │  Heading  ___°  │
-│                                           │  FOV      ___°  │
-│                                           │  Range    __ m  │
-│                                           │  Height   __ m  │
-│                                           │  Model  [▼]     │
-│                                           │  ─────────────  │
-│                                           │  Camera list    │
+│   Canvas: plan · walls · zones · cameras  │ Inspector       │
+│   · coverage/quality overlays             │  Camera "C3"    │
+│                                           │  Type/Model[▼]   │
+│                                           │  Heading/Tilt    │
+│                                           │  Lens/Sensor/Res │
+│                                           │  Height          │
+│                                           │  → derived FOV,  │
+│                                           │    DORI distances│
+│                                           │ Camera list      │
 └──────────────────────────────────────────┴────────────────┘
-Status bar: scale (px/m) · zoom · cursor position in meters
+Status: scale(px/m) · zoom · cursor in m/ft · coverage% · #blind spots
 ```
 
-**Interaction modes** (toolbar): Select, Calibrate, Draw Wall, Place Camera.
-- Select: drag to move; rotation handle to set heading; resize handle on the cone to set range.
-- Calibrate: click two points, type the real distance.
-- Draw Wall: click to add polyline vertices, double-click/Esc to finish.
-- Place Camera: click to drop a camera with default specs.
-- Pan = space-drag or middle-mouse; zoom = wheel.
+Modes: Select (drag-move, rotate handle = heading, cone handle = range), Calibrate (2 clicks
++ distance), Draw Wall (polyline), Draw Zone (interest / no-cover), Place Camera. Pan =
+space-drag/middle-mouse; zoom = wheel. Snapping to wall endpoints. Measurement tool.
 
 ---
 
-## 6. Milestones / roadmap
+## 6. Roadmap with acceptance criteria (Definition of Done)
 
-**Phase 0 — Scaffold** (small)
-Vite + React + TS project, Konva canvas, toolbar shell, Zustand store, image upload →
-floor plan rendered, pan/zoom. *Deliverable: load a plan and navigate it.*
+> A phase is "done" only when its **measurable** criteria pass — not when it "looks done."
 
-**Phase 1 — Calibrate & cameras** (small–medium)
-Scale calibration tool (two clicks + distance). Place/move/rotate cameras. Inspector panel
-with FOV/range/height. Draw naive (unblocked) FOV cones. Save/load JSON + autosave.
-*Deliverable: place cameras with cones and metric ranges; persist the project.*
+### Tier: MVP
+**Phase 0 — Scaffold + engine skeleton**
+- Vite+React+TS, Konva canvas, Zustand store with undo/redo, empty headless `coverage-engine` with test harness.
+- *DoD:* load a PNG/JPG → renders as background; pan/zoom; undo/redo a no-op command; CI runs `vitest` green.
 
-**Phase 2 — Walls & occlusion** (medium, the core risk)
-Wall-drawing tool. Visibility-polygon computation clipped to each FOV sector. Cones get
-blocked by walls. Dirty-flag recompute. *Deliverable: realistic, wall-aware coverage.*
-> Recommend building a tiny standalone geometry sandbox first to validate the algorithm
-> before wiring it into the full UI.
+**Phase 1 — Calibrate & cameras (unblocked cones)**
+- Scale calibration (2 points + real distance). Place/move/rotate fixed cameras. Inspector (FOV, range, height). Naive FOV cones. Versioned save/load + autosave; metric/imperial toggle.
+- *DoD:* after calibrating a known 5 m line, the status bar reports cursor distances within **±2%** of hand-measured; reload restores the project with **zero data loss**; cones rotate to heading.
 
-**Phase 3 — Aggregate coverage & blind spots** (medium)
-Union of coverage, area-of-interest boundary, blind-spot highlight, coverage heatmap
-(overlap count). *Deliverable: see total coverage and gaps at a glance.*
+**Phase 2 — Walls & occlusion (engine core, highest risk)**
+- Wall tool; visibility-polygon clip per sector; dirty-flag recompute.
+- *DoD:* golden geometry tests pass (polygon area within **±1%** of analytic value for square/L/pillar cases); a cone visibly stops at a traced wall; a 30-camera/300-segment plan recomputes a changed camera in **<50 ms**.
 
-**Phase 4 — Polish & export** (small–medium)
-Lens presets + focal-length input, camera labels/legend, PNG + PDF export with a spec table,
-keyboard shortcuts, undo/redo. *Deliverable: shareable plans.*
+### Tier: Pro
+**Phase 3 — DORI quality coverage**
+- Optics-derived FOV + pixel-density bands; color-graded cone; range = chosen-quality cutoff.
+- *DoD:* computed px/m matches the worked example in `/docs/dori-example.md` exactly; changing focal length updates bands live.
 
-**Later (optional):** PDF/vector plan import, auto-detect walls (CV), placement optimization,
-multi-floor, mobile/touch tuning.
+**Phase 4 — Height/tilt + aggregate analysis**
+- Near/far footprint from height+tilt with dead-zone; coverage union; overlap heatmap; blind-spot + no-cover violation highlighting.
+- *DoD:* a 3 m-high, 30°-tilt camera shows a non-zero near dead-zone matching the formula within **±2%**; toggling a camera updates aggregate coverage% and blind-spot count.
+
+**Phase 5 — Deliverables**
+- Camera schedule + BOM; storage/bandwidth calc (res×fps×codec×days→TB & Mbps); PoE/NVR-channel budget; PDF report; lens/camera presets.
+- *DoD:* PDF exports with one row per camera (model, lens, height, FOV, DORI distances) and a totals page; storage estimate within **±5%** of a hand calculation for a known config.
+
+### Tier: Perfect (north-star — fence the risky items)
+**Phase 6 — Fidelity:** IR/low-light range, glare warnings, partial/glass occluders, fisheye/360 + PTZ + thermal types, 3D walk view.
+**Phase 7 — Scale:** multi-floor/building, share links, comments, mobile site-survey companion.
+**Phase 8 — [RESEARCH-GRADE], opt-in, separately scoped:**
+- **Auto-placement optimization** (min cameras for target coverage of interest zones) — NP-hard set-cover; ship as heuristic with honest "suggested, verify manually" labeling.
+- **AI floor-plan/wall detection** — unreliable on arbitrary images; **manual tracing stays the always-works fallback**.
+- **Field-validation harness** — documented real-camera test; *DoD:* predicted px/m within **±15%** of measured for a 4 MP / 4 mm camera at 5/10/15 m. (Requires hardware; software alone cannot close this.)
 
 ---
 
@@ -192,24 +244,29 @@ multi-floor, mobile/touch tuning.
 
 | Risk | Mitigation |
 |------|-----------|
-| Visibility/occlusion algorithm is fiddly | De-risk in Phase 2 with a standalone sandbox + unit tests on known shapes |
-| "Range" implies false optical precision | Tooltip + docs: it's a planning heuristic; offer detect/recognize/identify presets |
-| Manual wall tracing is tedious | Snapping, polyline drawing, copy/mirror; CV auto-detect deferred to later |
-| Large plans slow recompute | Dirty flagging, spatial culling by sector bbox, Web Worker fallback |
-| Lossy scale on weird images | Calibration is mandatory before metric features unlock; warn if uncalibrated |
+| Occlusion algorithm is fiddly | Headless engine + golden tests built **before** UI wiring (Phase 2 DoD) |
+| "Range" implies false precision | Pro replaces it with derived DORI distances; MVP tooltip says "planning heuristic" |
+| Large plans slow | Dirty flagging, sector-bbox culling, Web Worker for heatmap/union |
+| Manual wall tracing tedious | Snapping, polyline, copy/mirror; AI detection deferred & fenced |
+| Accuracy unprovable in software | Phase 8 field-validation harness with a stated tolerance; labeled research-grade |
+| Optimization over-promises | Heuristic + "verify manually"; never auto-commit camera placements |
+| Schema churn breaks saved projects | `schemaVersion` + migration tests from Phase 1 |
 
 ---
 
-## 8. Open questions for product direction
-1. Single floor only in v1, or do you need multi-floor projects soon?
-2. Should range default to a **detect / recognize / identify** preset (DORI standard distances)?
-3. Is **PDF export with a camera schedule** (table of every camera + specs) important early, or is the on-screen plan enough at first?
-4. Any specific camera models/specs you want preloaded as presets?
+## 8. Open product questions
+1. Confirm primary user = small/prosumer installer for MVP/Pro (drives default presets & terminology)?
+2. Default minimum acceptable quality band — **Recognize (125 px/m)** a sensible default cutoff for "range"?
+3. Is the **PDF camera schedule** wanted as early as Phase 5, or can it wait?
+4. Any specific camera models/sensors to preload as presets (so DORI numbers are realistic)?
+5. Multi-floor needed within the first usable release, or comfortably in the Perfect tier?
 
 ---
 
-## 9. Estimated effort
-A polished MVP through **Phase 3** (load plan → calibrate → place cameras → wall-aware
-coverage → blind spots) is on the order of a few focused build sessions. Phase 0–1 produces
-something usable and demoable quickly; Phase 2 is where most of the engineering value (and
-risk) sits.
+## 9. Effort summary
+- **MVP (Phases 0–2):** a usable, wall-aware planner — a few focused sessions; Phase 2 holds most of the risk.
+- **Pro (Phases 3–5):** the trust + deliverables layer that makes it purchase-grade.
+- **Perfect (Phases 6–8):** north-star; Phase 8 is research-grade and should be scoped/funded separately.
+
+Recommended first build target: **Phase 0**, immediately establishing the headless
+`coverage-engine` + test harness so every later phase lands on a tested foundation.
