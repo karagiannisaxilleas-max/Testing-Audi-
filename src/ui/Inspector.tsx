@@ -19,6 +19,7 @@ import {
 import { useAnalysis } from "./useAnalysis";
 import { CAMERA_PRESETS } from "../state/presets";
 import { SystemPanel } from "./SystemPanel";
+import { QuotePanel } from "./QuotePanel";
 
 // Common horizontal resolutions by marketed megapixel count.
 const RESOLUTION_PRESETS: { label: string; px: number }[] = [
@@ -148,6 +149,7 @@ export function Inspector() {
       </ul>
 
       <SystemPanel />
+      <QuotePanel />
     </aside>
   );
 }

@@ -5,9 +5,12 @@
 // the shape changes incompatibly.
 
 import { deriveOptics } from "../engine/dori";
+import { defaultCatalog, type Product } from "../engine/catalog";
+import { DEFAULT_RECORDING, type RecordingConfig } from "../engine/storage";
+import type { MarginConfig } from "../engine/quote";
 import type { Camera, Scale, Wall, Zone } from "../engine/types";
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type Units = "metric" | "imperial";
 
@@ -16,6 +19,18 @@ export interface FloorPlan {
   imageDataUrl: string;
   width: number;
   height: number;
+}
+
+export interface ClientInfo {
+  name: string;
+  company: string;
+  email: string;
+  phone: string;
+  notes: string;
+}
+
+export function emptyClient(): ClientInfo {
+  return { name: "", company: "", email: "", phone: "", notes: "" };
 }
 
 export interface Project {
@@ -28,6 +43,11 @@ export interface Project {
   walls: Wall[];
   zones: Zone[];
   cameras: Camera[];
+  // Field-sales / quoting (placeholder catalog until real pricing is loaded).
+  catalog: Product[];
+  pricing: MarginConfig;
+  recording: RecordingConfig;
+  client: ClientInfo;
 }
 
 export function createEmptyProject(): Project {
@@ -41,6 +61,10 @@ export function createEmptyProject(): Project {
     walls: [],
     zones: [],
     cameras: [],
+    catalog: defaultCatalog(),
+    pricing: { marginPct: 0.35, taxPct: 0 },
+    recording: { ...DEFAULT_RECORDING },
+    client: emptyClient(),
   };
 }
 
@@ -59,6 +83,9 @@ export function migrateProject(raw: unknown): Project {
   let project = p;
   if ((project.schemaVersion ?? 1) === 1) {
     project = migrateV1toV2(project);
+  }
+  if (project.schemaVersion === 2) {
+    project = migrateV2toV3(project);
   }
 
   if (project.schemaVersion === SCHEMA_VERSION) {
@@ -91,5 +118,17 @@ function migrateV1toV2(p: Partial<Project> & { schemaVersion?: number }): Projec
     ...(p as Project),
     schemaVersion: 2,
     cameras,
+  };
+}
+
+/** v3 adds the field-sales fields: catalog, pricing, recording and client. */
+function migrateV2toV3(p: Partial<Project> & { schemaVersion?: number }): Project {
+  return {
+    ...(p as Project),
+    schemaVersion: 3,
+    catalog: p.catalog ?? defaultCatalog(),
+    pricing: p.pricing ?? { marginPct: 0.35, taxPct: 0 },
+    recording: p.recording ?? { ...DEFAULT_RECORDING },
+    client: p.client ?? emptyClient(),
   };
 }

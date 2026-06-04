@@ -1,35 +1,15 @@
-// Deliverables panel: recording configuration, the system estimate (bandwidth /
-// storage / PoE), and the PDF report export.
+// Recording configuration and the system estimate (bandwidth / storage / PoE).
+// Recording config lives on the project so it persists and feeds the quote.
 
-import { useState } from "react";
 import { useStore } from "../state/store";
-import {
-  DEFAULT_RECORDING,
-  systemEstimate,
-  type Codec,
-  type RecordingConfig,
-} from "../engine/storage";
-import { useAnalysis } from "./useAnalysis";
+import { systemEstimate, type Codec } from "../engine/storage";
 
 export function SystemPanel() {
   const project = useStore((s) => s.project);
-  const analysis = useAnalysis();
-  const [cfg, setCfg] = useState<RecordingConfig>(DEFAULT_RECORDING);
+  const commit = useStore((s) => s.commit);
+  const cfg = project.recording;
 
   const est = systemEstimate(project.cameras, cfg);
-  const hasCameras = project.cameras.length > 0;
-  const [exporting, setExporting] = useState(false);
-
-  async function exportPdf() {
-    setExporting(true);
-    try {
-      // Lazy-loaded so jsPDF stays out of the main bundle.
-      const { generateReport } = await import("./report");
-      generateReport(project, cfg, analysis);
-    } finally {
-      setExporting(false);
-    }
-  }
 
   return (
     <>
@@ -46,7 +26,11 @@ export function SystemPanel() {
           max={90}
           step={1}
           value={cfg.retentionDays}
-          onChange={(e) => setCfg({ ...cfg, retentionDays: parseInt(e.target.value, 10) })}
+          onChange={(e) =>
+            commit((d) => {
+              d.recording.retentionDays = parseInt(e.target.value, 10);
+            })
+          }
         />
       </div>
 
@@ -56,7 +40,11 @@ export function SystemPanel() {
           <select
             style={{ width: "100%" }}
             value={cfg.fps}
-            onChange={(e) => setCfg({ ...cfg, fps: parseInt(e.target.value, 10) })}
+            onChange={(e) =>
+              commit((d) => {
+                d.recording.fps = parseInt(e.target.value, 10);
+              })
+            }
           >
             {[10, 12, 15, 20, 25, 30].map((f) => (
               <option key={f} value={f}>{f} fps</option>
@@ -68,7 +56,11 @@ export function SystemPanel() {
           <select
             style={{ width: "100%" }}
             value={cfg.codec}
-            onChange={(e) => setCfg({ ...cfg, codec: e.target.value as Codec })}
+            onChange={(e) =>
+              commit((d) => {
+                d.recording.codec = e.target.value as Codec;
+              })
+            }
           >
             <option value="h265">H.265</option>
             <option value="h264">H.264</option>
@@ -80,7 +72,11 @@ export function SystemPanel() {
         <input
           type="checkbox"
           checked={cfg.continuous}
-          onChange={(e) => setCfg({ ...cfg, continuous: e.target.checked })}
+          onChange={(e) =>
+            commit((d) => {
+              d.recording.continuous = e.target.checked;
+            })
+          }
         />
         <span>Continuous recording (off = motion ~40%)</span>
       </label>
@@ -103,15 +99,6 @@ export function SystemPanel() {
           <strong>{est.switchPorts}-port · {est.cameras} ch</strong>
         </div>
       </div>
-
-      <button
-        className="active"
-        style={{ width: "100%" }}
-        disabled={!hasCameras || exporting}
-        onClick={exportPdf}
-      >
-        {exporting ? "Generating…" : "Export PDF report"}
-      </button>
     </>
   );
 }

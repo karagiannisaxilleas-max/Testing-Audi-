@@ -7,3 +7,5 @@ export * from "./dori";
 export * from "./footprint";
 export * from "./analysis";
 export * from "./storage";
+export * from "./catalog";
+export * from "./quote";

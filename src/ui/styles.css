@@ -265,6 +265,62 @@ button.active {
   text-align: right;
 }
 
+.quote-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.quote-head,
+.quote-line {
+  display: grid;
+  grid-template-columns: 1fr 28px 64px 64px;
+  gap: 6px;
+  align-items: center;
+}
+
+.quote-head {
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 2px 2px;
+}
+
+.quote-line {
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.quote-line:hover {
+  background: var(--panel-2);
+}
+
+.q-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.q-qty {
+  text-align: center;
+  color: var(--muted);
+}
+
+.q-cost {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  padding: 3px 4px;
+  font-size: 12px;
+}
+
+.q-price {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .summary {
   background: var(--panel-2);
   border: 1px solid var(--border);
