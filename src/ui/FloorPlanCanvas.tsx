@@ -22,6 +22,9 @@ const FALLBACK_PX_PER_M = 20;
 export function FloorPlanCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // Two-finger pinch tracking (touch zoom/pan).
+  const lastDist = useRef(0);
+  const lastCenter = useRef<{ x: number; y: number } | null>(null);
 
   const project = useStore((s) => s.project);
   const tool = useStore((s) => s.tool);
@@ -166,6 +169,48 @@ export function FloorPlanCanvas() {
     });
   }
 
+  // Pinch to zoom + two-finger pan on touch devices.
+  function handleTouchMove(e: Konva.KonvaEventObject<TouchEvent>) {
+    const touches = e.evt.touches;
+    if (touches.length < 2) return;
+    e.evt.preventDefault();
+    const stage = e.target.getStage();
+    if (!stage) return;
+    stage.stopDrag();
+    const rect = stage.container().getBoundingClientRect();
+    const p1 = { x: touches[0].clientX - rect.left, y: touches[0].clientY - rect.top };
+    const p2 = { x: touches[1].clientX - rect.left, y: touches[1].clientY - rect.top };
+    const center = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+    if (!lastDist.current) {
+      lastDist.current = dist;
+      lastCenter.current = center;
+      return;
+    }
+    const oldScale = viewport.scale;
+    const imgPoint = {
+      x: (center.x - viewport.x) / oldScale,
+      y: (center.y - viewport.y) / oldScale,
+    };
+    const newScale = Math.min(
+      MAX_ZOOM,
+      Math.max(MIN_ZOOM, oldScale * (dist / lastDist.current)),
+    );
+    setViewport({
+      scale: newScale,
+      x: center.x - imgPoint.x * newScale,
+      y: center.y - imgPoint.y * newScale,
+    });
+    lastDist.current = dist;
+    lastCenter.current = center;
+  }
+
+  function handleTouchEnd() {
+    lastDist.current = 0;
+    lastCenter.current = null;
+  }
+
   function handleStageClick(e: Konva.KonvaEventObject<MouseEvent>) {
     const stage = e.target.getStage();
     if (!stage) return;
@@ -231,6 +276,8 @@ export function FloorPlanCanvas() {
           scaleY={viewport.scale}
           draggable={isSelectMode}
           onWheel={handleWheel}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           onClick={handleStageClick}
           onTap={handleStageClick}
           onDblClick={() => {

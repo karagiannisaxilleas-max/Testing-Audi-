@@ -37,7 +37,7 @@ const LEVEL_LABEL: Record<DoriLevel, string> = {
   detect: "Detect",
 };
 
-export function Inspector() {
+export function Inspector({ className = "" }: { className?: string }) {
   const project = useStore((s) => s.project);
   const commit = useStore((s) => s.commit);
   const selectedId = useStore((s) => s.selectedCameraId);
@@ -53,7 +53,7 @@ export function Inspector() {
   }
 
   return (
-    <aside className="inspector">
+    <aside className={`inspector ${className}`}>
       <h2>Project</h2>
       <div className="field">
         <div className="label">Name</div>

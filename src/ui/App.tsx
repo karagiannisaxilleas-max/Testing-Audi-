@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { Toolbar } from "./Toolbar";
 import { Inspector } from "./Inspector";
@@ -11,6 +11,8 @@ export function App() {
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const replaceProject = useStore((s) => s.replaceProject);
+  // Bottom-sheet inspector on phones; always visible on desktop via CSS.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Restore the last autosaved project once on startup, then keep it saved.
   useEffect(() => {
@@ -46,8 +48,14 @@ export function App() {
           </div>
         )}
         <StatusBar />
+        <button
+          className="panel-toggle"
+          onClick={() => setPanelOpen((v) => !v)}
+        >
+          {panelOpen ? "Close" : "Details ▴"}
+        </button>
       </div>
-      <Inspector />
+      <Inspector className={panelOpen ? "open" : ""} />
     </div>
   );
 }

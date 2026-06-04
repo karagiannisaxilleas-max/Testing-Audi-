@@ -32,6 +32,7 @@ body,
     "toolbar toolbar"
     "canvas  inspector";
   height: 100vh;
+  height: 100dvh; /* avoids mobile browser chrome cropping */
 }
 
 .toolbar {
@@ -43,6 +44,11 @@ body,
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+}
+
+/* The panel toggle is hidden on desktop (inspector is always visible). */
+.panel-toggle {
+  display: none;
 }
 
 .toolbar .group {
@@ -92,6 +98,7 @@ button.active {
   position: relative;
   overflow: hidden;
   background: #0a0c10;
+  touch-action: none; /* we handle pinch/pan ourselves */
 }
 
 .empty-hint {
@@ -122,6 +129,88 @@ button.active {
   letter-spacing: 0.06em;
   color: var(--muted);
   margin: 0 0 8px;
+}
+
+/* ---------- Phone / narrow screens ---------- */
+@media (max-width: 820px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "toolbar"
+      "canvas";
+  }
+
+  /* Bigger, single-row scrollable toolbar for thumbs. */
+  .toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 8px;
+  }
+  .toolbar button {
+    padding: 9px 12px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .toolbar .sep {
+    display: none;
+  }
+
+  .panel-toggle {
+    display: inline-flex;
+    position: absolute;
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    z-index: 20;
+    border-radius: 24px;
+    padding: 12px 18px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    font-size: 15px;
+  }
+
+  /* Inspector becomes a slide-up bottom sheet. */
+  .inspector {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    max-height: 75vh;
+    max-height: 75dvh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    transform: translateY(100%);
+    transition: transform 0.22s ease;
+    z-index: 30;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.5);
+  }
+  .inspector.open {
+    transform: translateY(0);
+  }
+  /* Drag handle affordance at the top of the sheet. */
+  .inspector::before {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    margin: 0 auto 10px;
+  }
+
+  /* Roomier tap targets in forms. */
+  .inspector input,
+  .inspector select,
+  .inspector button {
+    min-height: 38px;
+    font-size: 14px;
+  }
 }
 
 .statusbar {
