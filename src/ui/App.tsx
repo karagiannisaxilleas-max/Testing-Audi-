@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { Toolbar } from "./Toolbar";
 import { Inspector } from "./Inspector";
@@ -6,8 +6,12 @@ import { StatusBar } from "./StatusBar";
 import { FloorPlanCanvas } from "./FloorPlanCanvas";
 import { loadAutosaved, useAutosave } from "./useAutosave";
 
+// three.js is heavy; only load it when the user switches to 3D.
+const View3D = lazy(() => import("./View3D").then((m) => ({ default: m.View3D })));
+
 export function App() {
   const hasPlan = useStore((s) => s.project.floorPlan !== null);
+  const threeD = useStore((s) => s.view.threeD);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const replaceProject = useStore((s) => s.replaceProject);
@@ -40,8 +44,14 @@ export function App() {
     <div className="app">
       <Toolbar />
       <div className="canvas-area">
-        <FloorPlanCanvas />
-        {!hasPlan && (
+        {threeD ? (
+          <Suspense fallback={<div className="empty-hint">Loading 3D…</div>}>
+            <View3D />
+          </Suspense>
+        ) : (
+          <FloorPlanCanvas />
+        )}
+        {!hasPlan && !threeD && (
           <div className="empty-hint">
             <div style={{ fontSize: 16 }}>No floor plan loaded</div>
             <div>Click “Load Plan” to import a PNG or JPG, then scroll to zoom and drag to pan.</div>

@@ -139,6 +139,13 @@ export function Toolbar() {
         >
           {view.night ? "Night (IR)" : "Day"}
         </button>
+        <button
+          className={view.threeD ? "active" : ""}
+          title="3D walk view"
+          onClick={() => setView({ threeD: !view.threeD })}
+        >
+          3D
+        </button>
       </div>
 
       <div className="sep" />

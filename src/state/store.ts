@@ -29,6 +29,7 @@ export interface ViewFlags {
   heatmap: boolean; // overlap heatmap
   blindSpots: boolean; // uncovered interest cells
   night: boolean; // night / IR lighting (clamps range, shows glare)
+  threeD: boolean; // 3D walk view instead of the 2D plan
 }
 
 export type ZoneKind = "interest" | "no-cover";
@@ -77,7 +78,7 @@ export const useStore = create<AppState>((set, get) => ({
   viewport: { x: 0, y: 0, scale: 1 },
   selectedCameraId: null,
   cursor: null,
-  view: { cones: true, heatmap: false, blindSpots: false, night: false },
+  view: { cones: true, heatmap: false, blindSpots: false, night: false, threeD: false },
   zoneKind: "interest",
   wallKind: "full",
 

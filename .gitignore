@@ -7,3 +7,5 @@ coverage
 .vite
 *.tsbuildinfo
 demo-coverage.*
+demo-*.png
+demo-*.svg

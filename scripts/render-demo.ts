@@ -8,7 +8,10 @@ import { writeFileSync } from "node:fs";
 import { computeCoverage } from "../src/engine/coverage";
 import { DORI_LEVELS, deriveOptics, doriDistances } from "../src/engine/dori";
 import { analyzeCoverage } from "../src/engine/analysis";
+import { effectiveRangeMeters, glareCameraIds } from "../src/engine/lighting";
 import type { Camera, Scale, Wall } from "../src/engine/types";
+
+const NIGHT = process.argv.includes("--night");
 
 const W = 800;
 const H = 520;
@@ -36,6 +39,15 @@ const walls: Wall[] = [
       { x: 400, y: 340 },
     ],
   },
+  // A window (glass) along the right wall — triggers glare for C2/C3.
+  {
+    id: "window",
+    occlusion: "glass",
+    points: [
+      { x: 760, y: 160 },
+      { x: 760, y: 320 },
+    ],
+  },
 ];
 
 function makeCamera(
@@ -60,6 +72,7 @@ function makeCamera(
     ...optics,
     fovAngleDeg,
     rangeMeters,
+    irRangeMeters: 30,
     model: "Generic",
   };
 }
@@ -81,14 +94,18 @@ function poly(points: { x: number; y: number }[]): string {
   return points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 }
 
+const glare = glareCameraIds(cameras, walls, scale);
+
 // Nested DORI bands per camera: detect (largest, faint) to identify (smallest).
+// At night each band is clamped to the camera's IR reach.
 const cones = cameras
   .map((cam) => {
     const distances = doriDistances(cam);
+    const cap = effectiveRangeMeters(cam, NIGHT);
     return [...DORI_LEVELS]
       .reverse()
       .map((level) => {
-        const banded = { ...cam, rangeMeters: distances[level] };
+        const banded = { ...cam, rangeMeters: Math.min(distances[level], cap) };
         const { polygon } = computeCoverage(banded, scale, walls);
         const stroke = level === "detect" ? ` stroke="${cam.color}" stroke-opacity="0.5" stroke-width="1"` : "";
         return `  <polygon points="${poly(polygon)}" fill="${cam.color}" fill-opacity="${BAND_OPACITY[level]}"${stroke}/>`;
@@ -98,23 +115,29 @@ const cones = cameras
   .join("\n");
 
 const wallPaths = walls
-  .map(
-    (w) =>
-      `  <polyline points="${poly(w.points)}" fill="none" stroke="#e6e8ec" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`,
-  )
+  .map((w) => {
+    const glassStyle = w.occlusion === "glass"
+      ? ` stroke="#22d3ee" stroke-width="4" stroke-dasharray="10 5"`
+      : ` stroke="#e6e8ec" stroke-width="4"`;
+    return `  <polyline points="${poly(w.points)}" fill="none"${glassStyle} stroke-linecap="round" stroke-linejoin="round"/>`;
+  })
   .join("\n");
 
 const camDots = cameras
-  .map(
-    (c) =>
+  .map((c) => {
+    const warn = glare.has(c.id)
+      ? `\n  <text x="${c.position.x - 4}" y="${c.position.y - 12}" font-size="18" fill="#f59e0b">⚠</text>`
+      : "";
+    return (
       `  <circle cx="${c.position.x}" cy="${c.position.y}" r="7" fill="${c.color}" stroke="#0a0c10" stroke-width="2"/>\n` +
-      `  <text x="${c.position.x + 11}" y="${c.position.y + 4}" fill="#e6e8ec" font-family="system-ui" font-size="13">${c.label}</text>`,
-  )
+      `  <text x="${c.position.x + 11}" y="${c.position.y + 4}" fill="#e6e8ec" font-family="system-ui" font-size="13">${c.label}</text>${warn}`
+    );
+  })
   .join("\n");
 
 // Aggregate analysis over the building interior: highlight blind spots (red).
 const interior = { x: 44, y: 44, width: 712, height: 432 };
-const analysis = analyzeCoverage(cameras, walls, [], scale, interior, 12);
+const analysis = analyzeCoverage(cameras, walls, [], scale, interior, 12, NIGHT);
 const blind = analysis.blindCells
   .map(
     (c) =>
@@ -122,9 +145,14 @@ const blind = analysis.blindCells
   )
   .join("\n");
 
+const bg = NIGHT ? "#05070b" : "#0a0c10";
+const title = NIGHT
+  ? `Night (IR) — coverage clamped to IR reach; ⚠ = glare from window; red = blind spots (${analysis.coveragePct.toFixed(0)}% covered)`
+  : `Day — DORI quality bands clipped by walls; ⚠ = glare from window; red = blind spots (${analysis.coveragePct.toFixed(0)}% covered)`;
+
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <rect width="${W}" height="${H}" fill="#0a0c10"/>
-  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">CCTV coverage — DORI quality bands clipped by walls; red = blind spots (${analysis.coveragePct.toFixed(0)}% of interior covered)</text>
+  <rect width="${W}" height="${H}" fill="${bg}"/>
+  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">${title}</text>
 ${cones}
 ${blind}
 ${wallPaths}
