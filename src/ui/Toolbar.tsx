@@ -31,6 +31,8 @@ export function Toolbar() {
   const setView = useStore((s) => s.setView);
   const zoneKind = useStore((s) => s.zoneKind);
   const setZoneKind = useStore((s) => s.setZoneKind);
+  const wallKind = useStore((s) => s.wallKind);
+  const setWallKind = useStore((s) => s.setWallKind);
 
   const loadFloorPlan = useFloorPlanLoader();
   const planInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +91,26 @@ export function Toolbar() {
         </>
       )}
 
+      {tool === "wall" && (
+        <>
+          <div className="sep" />
+          <div className="group">
+            <button
+              className={wallKind === "full" ? "active" : ""}
+              onClick={() => setWallKind("full")}
+            >
+              Wall
+            </button>
+            <button
+              className={wallKind === "glass" ? "active" : ""}
+              onClick={() => setWallKind("glass")}
+            >
+              Window
+            </button>
+          </div>
+        </>
+      )}
+
       <div className="sep" />
 
       <div className="group">
@@ -109,6 +131,13 @@ export function Toolbar() {
           onClick={() => setView({ blindSpots: !view.blindSpots })}
         >
           Blind spots
+        </button>
+        <button
+          className={view.night ? "active" : ""}
+          title="Night / IR: clamps range and flags glare from windows"
+          onClick={() => setView({ night: !view.night })}
+        >
+          {view.night ? "Night (IR)" : "Day"}
         </button>
       </div>
 

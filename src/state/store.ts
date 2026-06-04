@@ -28,9 +28,11 @@ export interface ViewFlags {
   cones: boolean; // per-camera DORI coverage bands
   heatmap: boolean; // overlap heatmap
   blindSpots: boolean; // uncovered interest cells
+  night: boolean; // night / IR lighting (clamps range, shows glare)
 }
 
 export type ZoneKind = "interest" | "no-cover";
+export type WallKind = "full" | "glass";
 
 interface AppState {
   project: Project;
@@ -43,6 +45,7 @@ interface AppState {
   cursor: Point | null;
   view: ViewFlags;
   zoneKind: ZoneKind;
+  wallKind: WallKind;
 
   // --- history ---
   /** Apply an Immer recipe to the project and record it for undo. */
@@ -61,6 +64,7 @@ interface AppState {
   setCursor: (cursor: Point | null) => void;
   setView: (view: Partial<ViewFlags>) => void;
   setZoneKind: (kind: ZoneKind) => void;
+  setWallKind: (kind: WallKind) => void;
 }
 
 const HISTORY_LIMIT = 100;
@@ -73,8 +77,9 @@ export const useStore = create<AppState>((set, get) => ({
   viewport: { x: 0, y: 0, scale: 1 },
   selectedCameraId: null,
   cursor: null,
-  view: { cones: true, heatmap: false, blindSpots: false },
+  view: { cones: true, heatmap: false, blindSpots: false, night: false },
   zoneKind: "interest",
+  wallKind: "full",
 
   commit: (recipe) =>
     set((state) => {
@@ -119,4 +124,5 @@ export const useStore = create<AppState>((set, get) => ({
   setCursor: (cursor) => set({ cursor }),
   setView: (view) => set((state) => ({ view: { ...state.view, ...view } })),
   setZoneKind: (zoneKind) => set({ zoneKind }),
+  setWallKind: (wallKind) => set({ wallKind }),
 }));

@@ -19,6 +19,6 @@ export function useAnalysis(): AnalysisResult | null {
     if (!floorPlan || !scale || (!active && !anyNoCover)) return null;
     const bounds: Bounds = { x: 0, y: 0, width: floorPlan.width, height: floorPlan.height };
     const cell = Math.max(6, Math.round(Math.min(bounds.width, bounds.height) / 120));
-    return analyzeCoverage(cameras, walls, zones, scale as Scale, bounds, cell);
-  }, [floorPlan, scale, cameras, walls, zones, active, anyNoCover]);
+    return analyzeCoverage(cameras, walls, zones, scale as Scale, bounds, cell, view.night);
+  }, [floorPlan, scale, cameras, walls, zones, active, anyNoCover, view.night]);
 }

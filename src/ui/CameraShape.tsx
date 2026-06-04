@@ -2,10 +2,11 @@
 // out to detect, each blocked by walls), a body marker, and — when selected —
 // a rotation handle for setting heading by dragging.
 
-import { Circle, Group, Line } from "react-konva";
+import { Circle, Group, Line, Text } from "react-konva";
 import type Konva from "konva";
 import { computeCoverage } from "../engine/coverage";
 import { DORI_LEVELS, doriDistances, type DoriLevel } from "../engine/dori";
+import { effectiveRangeMeters } from "../engine/lighting";
 import type { Camera, Scale, Wall } from "../engine/types";
 import { toRadians } from "../engine/geometry";
 
@@ -14,6 +15,8 @@ interface Props {
   scale: Scale;
   walls: Wall[];
   showCone: boolean;
+  night: boolean;
+  glare: boolean;
   selected: boolean;
   draggable: boolean;
   onSelect: () => void;
@@ -35,6 +38,8 @@ export function CameraShape({
   scale,
   walls,
   showCone,
+  night,
+  glare,
   selected,
   draggable,
   onSelect,
@@ -42,6 +47,8 @@ export function CameraShape({
   onHeading,
 }: Props) {
   const distances = doriDistances(camera);
+  // At night, IR limits reach: clamp every band to the effective range.
+  const cap = effectiveRangeMeters(camera, night);
 
   // One occluded polygon per DORI level, clipped to that level's distance.
   // Coordinates are relative to the group origin (the camera position) so a
@@ -50,7 +57,10 @@ export function CameraShape({
     ? [...DORI_LEVELS]
         .reverse() // detect -> identify (draw order: large to small)
         .map((level) => {
-          const banded: Camera = { ...camera, rangeMeters: distances[level] };
+          const banded: Camera = {
+            ...camera,
+            rangeMeters: Math.min(distances[level], cap),
+          };
           const points = computeCoverage(banded, scale, walls).polygon.flatMap(
             (p) => [p.x - camera.position.x, p.y - camera.position.y],
           );
@@ -101,6 +111,17 @@ export function CameraShape({
         strokeWidth={2}
         strokeScaleEnabled={false}
       />
+      {/* Glare warning when the camera looks at a window. */}
+      {glare && (
+        <Text
+          text="⚠"
+          x={6}
+          y={-18}
+          fontSize={16}
+          fill="#f59e0b"
+          listening={false}
+        />
+      )}
       {selected && (
         <Circle
           x={handle.x}

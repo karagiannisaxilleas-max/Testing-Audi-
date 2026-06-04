@@ -56,6 +56,8 @@ export interface Camera {
   fovAngleDeg: number;
   /** Useful outer distance in meters. Derived from the DORI detect threshold. */
   rangeMeters: number;
+  /** Night-time IR illuminator reach in meters (limits range in the dark). */
+  irRangeMeters?: number;
   model?: string;
 }
 

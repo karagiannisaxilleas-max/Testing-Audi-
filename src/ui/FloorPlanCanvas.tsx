@@ -2,12 +2,13 @@
 // floor-plan image, camera shapes with FOV cones, and the two-click scale
 // calibration flow.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Image as KonvaImage, Layer, Line, Stage } from "react-konva";
 import type Konva from "konva";
 import { useStore } from "../state/store";
 import { createCamera } from "../state/camera";
 import { computeScale } from "../engine/calibration";
+import { glareCameraIds } from "../engine/lighting";
 import type { Point, Scale } from "../engine/types";
 import { CameraShape } from "./CameraShape";
 import { AnalysisOverlay } from "./AnalysisOverlay";
@@ -37,9 +38,17 @@ export function FloorPlanCanvas() {
   const setCursor = useStore((s) => s.setCursor);
   const view = useStore((s) => s.view);
   const zoneKind = useStore((s) => s.zoneKind);
+  const wallKind = useStore((s) => s.wallKind);
 
   const { floorPlan, scale, cameras, units } = project;
   const effectiveScale: Scale = scale ?? { pxPerMeter: FALLBACK_PX_PER_M };
+
+  // Cameras looking at a window (glare). Only computed when glass walls exist.
+  const glareIds = useMemo(
+    () => glareCameraIds(cameras, project.walls, effectiveScale),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cameras, project.walls, effectiveScale.pxPerMeter],
+  );
 
   // Calibration: collected points (image coords) and the pending distance prompt.
   const [calPoints, setCalPoints] = useState<Point[]>([]);
@@ -80,7 +89,7 @@ export function FloorPlanCanvas() {
         d.walls.push({
           id: crypto.randomUUID(),
           points: vertices,
-          occlusion: "full",
+          occlusion: wallKind,
         });
       });
     }
@@ -321,13 +330,14 @@ export function FloorPlanCanvas() {
               />
             ))}
 
-            {/* Walls (full-height occluders). */}
+            {/* Walls: full-height occluders (white) and glass/windows (cyan). */}
             {project.walls.map((w) => (
               <Line
                 key={w.id}
                 points={w.points.flatMap((p) => [p.x, p.y])}
-                stroke="#e6e8ec"
+                stroke={w.occlusion === "glass" ? "#22d3ee" : "#e6e8ec"}
                 strokeWidth={3}
+                dash={w.occlusion === "glass" ? [10, 5] : undefined}
                 strokeScaleEnabled={false}
                 lineCap="round"
                 lineJoin="round"
@@ -390,6 +400,8 @@ export function FloorPlanCanvas() {
                   scale={effectiveScale}
                   walls={project.walls}
                   showCone={view.cones}
+                  night={view.night}
+                  glare={glareIds.has(cam.id)}
                   selected={cam.id === selectedCameraId}
                   draggable={isSelectMode}
                   onSelect={() => setSelectedCamera(cam.id)}
@@ -450,7 +462,8 @@ export function FloorPlanCanvas() {
 
       {tool === "wall" && (
         <div className="overlay-hint">
-          Click to add wall points · double-click or Enter to finish · Esc to cancel
+          Drawing a {wallKind === "glass" ? "window (glass)" : "wall"} · click to add
+          points · double-click or Enter to finish · Esc to cancel
         </div>
       )}
 

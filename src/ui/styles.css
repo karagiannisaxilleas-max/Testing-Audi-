@@ -354,6 +354,16 @@ button.active {
   text-align: right;
 }
 
+.glare-banner {
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
 .quote-table {
   display: flex;
   flex-direction: column;

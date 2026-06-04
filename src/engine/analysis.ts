@@ -8,6 +8,7 @@
 import { computeCoverage } from "./coverage";
 import { distance, pointInPolygon } from "./geometry";
 import { groundFootprint } from "./footprint";
+import { effectiveRangeMeters } from "./lighting";
 import type { Camera, Point, Scale, Wall, Zone } from "./types";
 
 export interface Bounds {
@@ -29,13 +30,17 @@ export function buildCameraCoverage(
   cameras: Camera[],
   scale: Scale,
   walls: Wall[],
+  night = false,
 ): CameraCoverage[] {
   return cameras.map((camera) => {
     const fp = groundFootprint(camera);
-    const farMeters = Math.min(camera.rangeMeters, fp.farMeters);
+    const range = effectiveRangeMeters(camera, night); // IR-limited at night
+    const farMeters = Math.min(range, fp.farMeters);
+    // Recompute the coverage polygon at the (possibly clamped) range.
+    const clamped: Camera = { ...camera, rangeMeters: range };
     return {
       camera,
-      polygon: computeCoverage(camera, scale, walls).polygon,
+      polygon: computeCoverage(clamped, scale, walls).polygon,
       nearPx: fp.nearMeters * scale.pxPerMeter,
       farPx: farMeters * scale.pxPerMeter,
     };
@@ -77,8 +82,9 @@ export function analyzeCoverage(
   scale: Scale,
   bounds: Bounds,
   cellSize: number,
+  night = false,
 ): AnalysisResult {
-  const covs = buildCameraCoverage(cameras, scale, walls);
+  const covs = buildCameraCoverage(cameras, scale, walls, night);
   const interest = zones.filter((z) => z.kind === "interest");
   const noCover = zones.filter((z) => z.kind === "no-cover");
 

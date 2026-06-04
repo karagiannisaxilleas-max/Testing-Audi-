@@ -41,6 +41,7 @@ export function createCamera(position: Point, index: number): Camera {
     ...DEFAULT_OPTICS,
     fovAngleDeg,
     rangeMeters,
+    irRangeMeters: 30,
     model: "Generic 4 MP / 4 mm",
   };
 }

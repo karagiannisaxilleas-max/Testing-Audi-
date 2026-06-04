@@ -16,6 +16,8 @@ import {
   metersToDisplay,
   unitLabel,
 } from "./units";
+import { useMemo } from "react";
+import { glareCameraIds } from "../engine/lighting";
 import { useAnalysis } from "./useAnalysis";
 import { CAMERA_PRESETS } from "../state/presets";
 import { SystemPanel } from "./SystemPanel";
@@ -44,6 +46,12 @@ export function Inspector({ className = "" }: { className?: string }) {
   const setSelected = useStore((s) => s.setSelectedCamera);
 
   const selected = project.cameras.find((c) => c.id === selectedId) ?? null;
+
+  // Glare: cameras facing a window. Cheap; recompute on camera/wall change.
+  const glareIds = useMemo(
+    () => glareCameraIds(project.cameras, project.walls, project.scale ?? { pxPerMeter: 20 }),
+    [project.cameras, project.walls, project.scale],
+  );
 
   function updateCamera(id: string, patch: Partial<Camera>) {
     commit((d) => {
@@ -116,6 +124,7 @@ export function Inspector({ className = "" }: { className?: string }) {
           key={selected.id}
           camera={selected}
           units={project.units}
+          glare={glareIds.has(selected.id)}
           onChange={(patch) => updateCamera(selected.id, patch)}
           onDelete={() => {
             commit((d) => {
@@ -157,11 +166,13 @@ export function Inspector({ className = "" }: { className?: string }) {
 function CameraEditor({
   camera,
   units,
+  glare,
   onChange,
   onDelete,
 }: {
   camera: Camera;
   units: "metric" | "imperial";
+  glare?: boolean;
   onChange: (patch: Partial<Camera>) => void;
   onDelete: () => void;
 }) {
@@ -183,6 +194,13 @@ function CameraEditor({
   return (
     <>
       <h2>Camera “{camera.label}”</h2>
+
+      {glare && (
+        <div className="glare-banner">
+          ⚠ Faces a window — risk of glare / backlight. Consider re-aiming or
+          relying on IR at night.
+        </div>
+      )}
 
       <div className="field">
         <div className="label">Label</div>
@@ -268,6 +286,16 @@ function CameraEditor({
         step={0.1}
         suffix={` ${unitLabel(units)}`}
         onChange={(v) => onChange({ mountHeightMeters: displayToMeters(v, units) })}
+      />
+
+      <Slider
+        label="Night IR range"
+        value={Math.round(metersToDisplay(camera.irRangeMeters ?? 30, units))}
+        min={0}
+        max={metersToDisplay(60, units)}
+        step={1}
+        suffix={` ${unitLabel(units)}`}
+        onChange={(v) => onChange({ irRangeMeters: displayToMeters(v, units) })}
       />
 
       <div className="field">
