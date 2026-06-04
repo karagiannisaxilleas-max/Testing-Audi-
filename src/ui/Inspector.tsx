@@ -16,6 +16,9 @@ import {
   metersToDisplay,
   unitLabel,
 } from "./units";
+import { useAnalysis } from "./useAnalysis";
+import { CAMERA_PRESETS } from "../state/presets";
+import { SystemPanel } from "./SystemPanel";
 
 // Common horizontal resolutions by marketed megapixel count.
 const RESOLUTION_PRESETS: { label: string; px: number }[] = [
@@ -73,21 +76,39 @@ export function Inspector() {
             : "not calibrated"}
         </div>
         <div>Walls: {project.walls.length}</div>
+        <div>Zones: {project.zones.length}</div>
       </dl>
 
-      {project.walls.length > 0 && (
-        <button
-          className="danger"
-          style={{ width: "100%", marginBottom: 14 }}
-          onClick={() =>
-            commit((d) => {
-              d.walls = [];
-            })
-          }
-        >
-          Clear walls
-        </button>
-      )}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {project.walls.length > 0 && (
+          <button
+            className="danger"
+            style={{ flex: 1 }}
+            onClick={() =>
+              commit((d) => {
+                d.walls = [];
+              })
+            }
+          >
+            Clear walls
+          </button>
+        )}
+        {project.zones.length > 0 && (
+          <button
+            className="danger"
+            style={{ flex: 1 }}
+            onClick={() =>
+              commit((d) => {
+                d.zones = [];
+              })
+            }
+          >
+            Clear zones
+          </button>
+        )}
+      </div>
+
+      <CoverageSummary />
 
       {selected ? (
         <CameraEditor
@@ -125,6 +146,8 @@ export function Inspector() {
           </li>
         ))}
       </ul>
+
+      <SystemPanel />
     </aside>
   );
 }
@@ -166,6 +189,33 @@ function CameraEditor({
           value={camera.label}
           onChange={(e) => onChange({ label: e.target.value })}
         />
+      </div>
+
+      <div className="field">
+        <div className="label">Preset</div>
+        <select
+          style={{ width: "100%" }}
+          value={camera.model ?? ""}
+          onChange={(e) => {
+            const preset = CAMERA_PRESETS.find((p) => p.name === e.target.value);
+            if (!preset) return;
+            const optics = {
+              sensorWidthMm: preset.sensorWidthMm,
+              resolutionWidthPx: preset.resolutionWidthPx,
+              focalLengthMm: preset.focalLengthMm,
+            };
+            onChange({ ...optics, ...deriveOptics(optics), model: preset.name });
+          }}
+        >
+          {CAMERA_PRESETS.every((p) => p.name !== camera.model) && (
+            <option value={camera.model ?? ""}>{camera.model ?? "Custom"}</option>
+          )}
+          {CAMERA_PRESETS.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       <Slider
@@ -283,6 +333,43 @@ function Slider({
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
+    </div>
+  );
+}
+
+function CoverageSummary() {
+  const result = useAnalysis();
+  if (!result) {
+    return (
+      <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 8 }}>
+        Toggle Heatmap or Blind spots (calibrated plan required) to see coverage
+        analysis. Draw an interest zone to scope it.
+      </p>
+    );
+  }
+  const pct = result.coveragePct.toFixed(1);
+  return (
+    <div className="summary">
+      <div className="summary-row">
+        <span>Coverage</span>
+        <strong style={{ color: result.coveragePct >= 90 ? "#22c55e" : "#f59e0b" }}>
+          {pct}%
+        </strong>
+      </div>
+      <div className="summary-row">
+        <span>Max overlap</span>
+        <strong>{result.maxOverlap}×</strong>
+      </div>
+      <div className="summary-row">
+        <span>Blind cells</span>
+        <strong>{result.blindCells.length}</strong>
+      </div>
+      {result.violationCells.length > 0 && (
+        <div className="summary-row" style={{ color: "#f43f5e" }}>
+          <span>No-cover violations</span>
+          <strong>{result.violationCells.length}</strong>
+        </div>
+      )}
     </div>
   );
 }

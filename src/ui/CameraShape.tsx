@@ -13,6 +13,7 @@ interface Props {
   camera: Camera;
   scale: Scale;
   walls: Wall[];
+  showCone: boolean;
   selected: boolean;
   draggable: boolean;
   onSelect: () => void;
@@ -33,6 +34,7 @@ export function CameraShape({
   camera,
   scale,
   walls,
+  showCone,
   selected,
   draggable,
   onSelect,
@@ -44,16 +46,17 @@ export function CameraShape({
   // One occluded polygon per DORI level, clipped to that level's distance.
   // Coordinates are relative to the group origin (the camera position) so a
   // drag translates the cached shape; it re-occludes on release.
-  const bands = [...DORI_LEVELS]
-    .reverse() // detect -> identify (draw order: large to small)
-    .map((level) => {
-      const banded: Camera = { ...camera, rangeMeters: distances[level] };
-      const points = computeCoverage(banded, scale, walls).polygon.flatMap((p) => [
-        p.x - camera.position.x,
-        p.y - camera.position.y,
-      ]);
-      return { level, points };
-    });
+  const bands = showCone
+    ? [...DORI_LEVELS]
+        .reverse() // detect -> identify (draw order: large to small)
+        .map((level) => {
+          const banded: Camera = { ...camera, rangeMeters: distances[level] };
+          const points = computeCoverage(banded, scale, walls).polygon.flatMap(
+            (p) => [p.x - camera.position.x, p.y - camera.position.y],
+          );
+          return { level, points };
+        })
+    : [];
 
   const rangePx = camera.rangeMeters * scale.pxPerMeter;
   const headingRad = toRadians(camera.heading);

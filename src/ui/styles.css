@@ -265,6 +265,21 @@ button.active {
   text-align: right;
 }
 
+.summary {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
 .danger {
   border-color: #7f1d1d !important;
 }

@@ -4,3 +4,6 @@ export * from "./geometry";
 export * from "./coverage";
 export * from "./calibration";
 export * from "./dori";
+export * from "./footprint";
+export * from "./analysis";
+export * from "./storage";

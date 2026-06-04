@@ -10,6 +10,7 @@ import { createCamera } from "../state/camera";
 import { computeScale } from "../engine/calibration";
 import type { Point, Scale } from "../engine/types";
 import { CameraShape } from "./CameraShape";
+import { AnalysisOverlay } from "./AnalysisOverlay";
 import { displayToMeters, unitLabel } from "./units";
 
 const MIN_ZOOM = 0.1;
@@ -31,6 +32,8 @@ export function FloorPlanCanvas() {
   const selectedCameraId = useStore((s) => s.selectedCameraId);
   const setSelectedCamera = useStore((s) => s.setSelectedCamera);
   const setCursor = useStore((s) => s.setCursor);
+  const view = useStore((s) => s.view);
+  const zoneKind = useStore((s) => s.zoneKind);
 
   const { floorPlan, scale, cameras, units } = project;
   const effectiveScale: Scale = scale ?? { pxPerMeter: FALLBACK_PX_PER_M };
@@ -42,6 +45,8 @@ export function FloorPlanCanvas() {
 
   // Wall drawing: vertices of the polyline currently being drawn.
   const [draftWall, setDraftWall] = useState<Point[]>([]);
+  // Zone drawing: vertices of the polygon currently being drawn.
+  const [draftZone, setDraftZone] = useState<Point[]>([]);
 
   // Track container size so the stage fills the available area responsively.
   useEffect(() => {
@@ -62,6 +67,7 @@ export function FloorPlanCanvas() {
       setAskDistance(false);
     }
     if (tool !== "wall") setDraftWall([]);
+    if (tool !== "zone") setDraftZone([]);
   }, [tool]);
 
   // Finish the wall on Enter, cancel on Escape.
@@ -77,16 +83,37 @@ export function FloorPlanCanvas() {
     }
     setDraftWall([]);
   }
+
+  // Finish the zone (>= 3 vertices) on Enter, cancel on Escape.
+  function finishZone(vertices: Point[]) {
+    if (vertices.length >= 3) {
+      commit((d) => {
+        d.zones.push({
+          id: crypto.randomUUID(),
+          kind: zoneKind,
+          polygon: vertices,
+          label: zoneKind === "interest" ? "Area of interest" : "No-cover zone",
+        });
+      });
+    }
+    setDraftZone([]);
+  }
+
   useEffect(() => {
-    if (tool !== "wall") return;
+    if (tool !== "wall" && tool !== "zone") return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Enter") finishWall(draftWall);
-      else if (e.key === "Escape") setDraftWall([]);
+      if (e.key === "Enter") {
+        if (tool === "wall") finishWall(draftWall);
+        else finishZone(draftZone);
+      } else if (e.key === "Escape") {
+        setDraftWall([]);
+        setDraftZone([]);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tool, draftWall]);
+  }, [tool, draftWall, draftZone, zoneKind]);
 
   // Decode the embedded data URL into an <img> for Konva.
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -167,6 +194,11 @@ export function FloorPlanCanvas() {
       return;
     }
 
+    if (tool === "zone") {
+      setDraftZone((prev) => [...prev, { x: pos.x, y: pos.y }]);
+      return;
+    }
+
     if (tool === "select" && clickedEmpty) {
       setSelectedCamera(null);
     }
@@ -203,6 +235,7 @@ export function FloorPlanCanvas() {
           onTap={handleStageClick}
           onDblClick={() => {
             if (tool === "wall") finishWall(draftWall);
+            else if (tool === "zone") finishZone(draftZone);
           }}
           onMouseMove={(e) => {
             const pos = e.target.getStage()?.getRelativePointerPosition();
@@ -221,6 +254,25 @@ export function FloorPlanCanvas() {
             {image && (
               <KonvaImage image={image} name="plan-image" listening />
             )}
+
+            {/* Aggregate analysis (heatmap / blind spots / no-cover). */}
+            <AnalysisOverlay />
+
+            {/* Zones (areas of interest and no-cover). */}
+            {project.zones.map((z) => (
+              <Line
+                key={z.id}
+                points={z.polygon.flatMap((p) => [p.x, p.y])}
+                closed
+                stroke={z.kind === "interest" ? "#38bdf8" : "#f43f5e"}
+                strokeWidth={2}
+                dash={z.kind === "no-cover" ? [6, 4] : undefined}
+                fill={z.kind === "interest" ? "#38bdf8" : "#f43f5e"}
+                opacity={0.12}
+                strokeScaleEnabled={false}
+                listening={false}
+              />
+            ))}
 
             {/* Walls (full-height occluders). */}
             {project.walls.map((w) => (
@@ -260,29 +312,54 @@ export function FloorPlanCanvas() {
               </>
             )}
 
+            {/* Zone currently being drawn. */}
+            {draftZone.length > 0 && (
+              <>
+                <Line
+                  points={draftZone.flatMap((p) => [p.x, p.y])}
+                  closed={draftZone.length > 2}
+                  stroke={zoneKind === "interest" ? "#38bdf8" : "#f43f5e"}
+                  strokeWidth={2}
+                  dash={[6, 4]}
+                  strokeScaleEnabled={false}
+                />
+                {draftZone.map((p, i) => (
+                  <Circle
+                    key={i}
+                    x={p.x}
+                    y={p.y}
+                    radius={4}
+                    fill={zoneKind === "interest" ? "#38bdf8" : "#f43f5e"}
+                    strokeScaleEnabled={false}
+                  />
+                ))}
+              </>
+            )}
+
             {cameras.map((cam) => (
-              <CameraShape
-                key={cam.id}
-                camera={cam}
-                scale={effectiveScale}
-                walls={project.walls}
-                selected={cam.id === selectedCameraId}
-                draggable={isSelectMode}
-                onSelect={() => setSelectedCamera(cam.id)}
-                onMove={(x, y) =>
-                  commit((d) => {
-                    const c = d.cameras.find((c) => c.id === cam.id);
-                    if (c) c.position = { x, y };
-                  })
-                }
-                onHeading={(deg) =>
-                  commit((d) => {
-                    const c = d.cameras.find((c) => c.id === cam.id);
-                    if (c) c.heading = deg;
-                  })
-                }
-              />
-            ))}
+                <CameraShape
+                  key={cam.id}
+                  camera={cam}
+                  scale={effectiveScale}
+                  walls={project.walls}
+                  showCone={view.cones}
+                  selected={cam.id === selectedCameraId}
+                  draggable={isSelectMode}
+                  onSelect={() => setSelectedCamera(cam.id)}
+                  onMove={(x, y) =>
+                    commit((d) => {
+                      const c = d.cameras.find((c) => c.id === cam.id);
+                      if (c) c.position = { x, y };
+                    })
+                  }
+                  onHeading={(deg) =>
+                    commit((d) => {
+                      const c = d.cameras.find((c) => c.id === cam.id);
+                      if (c) c.heading = deg;
+                    })
+                  }
+                />
+              ))}
 
             {/* Calibration in-progress overlay. */}
             {calPoints.length > 0 && (
@@ -327,6 +404,13 @@ export function FloorPlanCanvas() {
       {tool === "wall" && (
         <div className="overlay-hint">
           Click to add wall points · double-click or Enter to finish · Esc to cancel
+        </div>
+      )}
+
+      {tool === "zone" && (
+        <div className="overlay-hint">
+          Drawing a {zoneKind === "interest" ? "area of interest" : "no-cover"} zone
+          · click to add points · double-click or Enter to close · Esc to cancel
         </div>
       )}
 

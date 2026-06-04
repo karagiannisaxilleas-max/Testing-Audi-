@@ -24,6 +24,14 @@ export interface Viewport {
   scale: number; // zoom factor
 }
 
+export interface ViewFlags {
+  cones: boolean; // per-camera DORI coverage bands
+  heatmap: boolean; // overlap heatmap
+  blindSpots: boolean; // uncovered interest cells
+}
+
+export type ZoneKind = "interest" | "no-cover";
+
 interface AppState {
   project: Project;
   past: Project[];
@@ -33,6 +41,8 @@ interface AppState {
   selectedCameraId: string | null;
   /** Cursor in image-pixel coords; transient, never recorded in history. */
   cursor: Point | null;
+  view: ViewFlags;
+  zoneKind: ZoneKind;
 
   // --- history ---
   /** Apply an Immer recipe to the project and record it for undo. */
@@ -49,6 +59,8 @@ interface AppState {
   setViewport: (viewport: Partial<Viewport>) => void;
   setSelectedCamera: (id: string | null) => void;
   setCursor: (cursor: Point | null) => void;
+  setView: (view: Partial<ViewFlags>) => void;
+  setZoneKind: (kind: ZoneKind) => void;
 }
 
 const HISTORY_LIMIT = 100;
@@ -61,6 +73,8 @@ export const useStore = create<AppState>((set, get) => ({
   viewport: { x: 0, y: 0, scale: 1 },
   selectedCameraId: null,
   cursor: null,
+  view: { cones: true, heatmap: false, blindSpots: false },
+  zoneKind: "interest",
 
   commit: (recipe) =>
     set((state) => {
@@ -103,4 +117,6 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({ viewport: { ...state.viewport, ...viewport } })),
   setSelectedCamera: (id) => set({ selectedCameraId: id }),
   setCursor: (cursor) => set({ cursor }),
+  setView: (view) => set((state) => ({ view: { ...state.view, ...view } })),
+  setZoneKind: (zoneKind) => set({ zoneKind }),
 }));

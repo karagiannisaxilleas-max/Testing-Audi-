@@ -7,6 +7,7 @@
 import { writeFileSync } from "node:fs";
 import { computeCoverage } from "../src/engine/coverage";
 import { DORI_LEVELS, deriveOptics, doriDistances } from "../src/engine/dori";
+import { analyzeCoverage } from "../src/engine/analysis";
 import type { Camera, Scale, Wall } from "../src/engine/types";
 
 const W = 800;
@@ -111,10 +112,21 @@ const camDots = cameras
   )
   .join("\n");
 
+// Aggregate analysis over the building interior: highlight blind spots (red).
+const interior = { x: 44, y: 44, width: 712, height: 432 };
+const analysis = analyzeCoverage(cameras, walls, [], scale, interior, 12);
+const blind = analysis.blindCells
+  .map(
+    (c) =>
+      `  <rect x="${c.x}" y="${c.y}" width="${analysis.cellSize}" height="${analysis.cellSize}" fill="#ef4444" fill-opacity="0.5"/>`,
+  )
+  .join("\n");
+
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="#0a0c10"/>
-  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">CCTV coverage — DORI quality bands (densest = identify, near the camera) clipped by walls</text>
+  <text x="20" y="28" fill="#9aa3b2" font-family="system-ui" font-size="14">CCTV coverage — DORI quality bands clipped by walls; red = blind spots (${analysis.coveragePct.toFixed(0)}% of interior covered)</text>
 ${cones}
+${blind}
 ${wallPaths}
 ${camDots}
 </svg>`;

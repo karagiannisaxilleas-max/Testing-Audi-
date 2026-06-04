@@ -14,7 +14,7 @@ const TOOLS: { mode: ToolMode; label: string; phase: number }[] = [
   { mode: "calibrate", label: "Calibrate", phase: 0 },
   { mode: "camera", label: "Camera", phase: 0 },
   { mode: "wall", label: "Wall", phase: 0 },
-  { mode: "zone", label: "Zone", phase: 4 },
+  { mode: "zone", label: "Zone", phase: 0 },
 ];
 
 export function Toolbar() {
@@ -27,6 +27,10 @@ export function Toolbar() {
   const project = useStore((s) => s.project);
   const replaceProject = useStore((s) => s.replaceProject);
   const commit = useStore((s) => s.commit);
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const zoneKind = useStore((s) => s.zoneKind);
+  const setZoneKind = useStore((s) => s.setZoneKind);
 
   const loadFloorPlan = useFloorPlanLoader();
   const planInputRef = useRef<HTMLInputElement>(null);
@@ -63,6 +67,49 @@ export function Toolbar() {
             {t.label}
           </button>
         ))}
+      </div>
+
+      {tool === "zone" && (
+        <>
+          <div className="sep" />
+          <div className="group">
+            <button
+              className={zoneKind === "interest" ? "active" : ""}
+              onClick={() => setZoneKind("interest")}
+            >
+              Interest
+            </button>
+            <button
+              className={zoneKind === "no-cover" ? "active" : ""}
+              onClick={() => setZoneKind("no-cover")}
+            >
+              No-cover
+            </button>
+          </div>
+        </>
+      )}
+
+      <div className="sep" />
+
+      <div className="group">
+        <button
+          className={view.cones ? "active" : ""}
+          onClick={() => setView({ cones: !view.cones })}
+        >
+          Coverage
+        </button>
+        <button
+          className={view.heatmap ? "active" : ""}
+          onClick={() => setView({ heatmap: !view.heatmap })}
+        >
+          Heatmap
+        </button>
+        <button
+          className={view.blindSpots ? "active" : ""}
+          onClick={() => setView({ blindSpots: !view.blindSpots })}
+        >
+          Blind spots
+        </button>
       </div>
 
       <div className="sep" />
