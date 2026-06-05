@@ -35,6 +35,10 @@ export interface ViewFlags {
 export type ZoneKind = "interest" | "no-cover";
 export type WallKind = "full" | "glass";
 
+/** Guided workflow stages, in order. `welcome` is the pre-project landing. */
+export type Stage = "welcome" | "setup" | "survey" | "review" | "quote";
+export const FLOW_STAGES: Stage[] = ["setup", "survey", "review", "quote"];
+
 interface AppState {
   project: Project;
   past: Project[];
@@ -47,6 +51,8 @@ interface AppState {
   view: ViewFlags;
   zoneKind: ZoneKind;
   wallKind: WallKind;
+  /** Current step in the guided workflow. */
+  stage: Stage;
 
   // --- history ---
   /** Apply an Immer recipe to the project and record it for undo. */
@@ -64,6 +70,7 @@ interface AppState {
   setSelectedCamera: (id: string | null) => void;
   setCursor: (cursor: Point | null) => void;
   setView: (view: Partial<ViewFlags>) => void;
+  setStage: (stage: Stage) => void;
   setZoneKind: (kind: ZoneKind) => void;
   setWallKind: (kind: WallKind) => void;
 }
@@ -81,6 +88,7 @@ export const useStore = create<AppState>((set, get) => ({
   view: { cones: true, heatmap: false, blindSpots: false, night: false, threeD: false },
   zoneKind: "interest",
   wallKind: "full",
+  stage: "welcome",
 
   commit: (recipe) =>
     set((state) => {
@@ -124,6 +132,7 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedCamera: (id) => set({ selectedCameraId: id }),
   setCursor: (cursor) => set({ cursor }),
   setView: (view) => set((state) => ({ view: { ...state.view, ...view } })),
+  setStage: (stage) => set({ stage }),
   setZoneKind: (zoneKind) => set({ zoneKind }),
   setWallKind: (wallKind) => set({ wallKind }),
 }));

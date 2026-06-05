@@ -20,8 +20,6 @@ import { useMemo } from "react";
 import { glareCameraIds } from "../engine/lighting";
 import { useAnalysis } from "./useAnalysis";
 import { CAMERA_PRESETS } from "../state/presets";
-import { SystemPanel } from "./SystemPanel";
-import { QuotePanel } from "./QuotePanel";
 
 // Common horizontal resolutions by marketed megapixel count.
 const RESOLUTION_PRESETS: { label: string; px: number }[] = [
@@ -39,7 +37,9 @@ const LEVEL_LABEL: Record<DoriLevel, string> = {
   detect: "Detect",
 };
 
-export function Inspector({ className = "" }: { className?: string }) {
+// Survey-stage panel: per-camera editor and the camera list, plus quick scale /
+// wall / zone status. Content only — the SidePanel provides the scroll wrapper.
+export function CameraPanel() {
   const project = useStore((s) => s.project);
   const commit = useStore((s) => s.commit);
   const selectedId = useStore((s) => s.selectedCameraId);
@@ -61,64 +61,7 @@ export function Inspector({ className = "" }: { className?: string }) {
   }
 
   return (
-    <aside className={`inspector ${className}`}>
-      <h2>Project</h2>
-      <div className="field">
-        <div className="label">Name</div>
-        <input
-          style={{ width: "100%" }}
-          value={project.name}
-          onChange={(e) => {
-            const name = e.target.value;
-            commit((d) => {
-              d.name = name;
-            });
-          }}
-        />
-      </div>
-      <dl style={{ margin: "0 0 14px", color: "var(--muted)", lineHeight: 1.7 }}>
-        <div>Floor plan: {project.floorPlan ? "loaded" : "—"}</div>
-        <div>
-          Scale:{" "}
-          {project.scale
-            ? `${project.scale.pxPerMeter.toFixed(1)} px/m`
-            : "not calibrated"}
-        </div>
-        <div>Walls: {project.walls.length}</div>
-        <div>Zones: {project.zones.length}</div>
-      </dl>
-
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        {project.walls.length > 0 && (
-          <button
-            className="danger"
-            style={{ flex: 1 }}
-            onClick={() =>
-              commit((d) => {
-                d.walls = [];
-              })
-            }
-          >
-            Clear walls
-          </button>
-        )}
-        {project.zones.length > 0 && (
-          <button
-            className="danger"
-            style={{ flex: 1 }}
-            onClick={() =>
-              commit((d) => {
-                d.zones = [];
-              })
-            }
-          >
-            Clear zones
-          </button>
-        )}
-      </div>
-
-      <CoverageSummary />
-
+    <div className="inspector">
       {selected ? (
         <CameraEditor
           key={selected.id}
@@ -134,32 +77,55 @@ export function Inspector({ className = "" }: { className?: string }) {
           }}
         />
       ) : (
-        <p style={{ color: "var(--muted)", fontSize: 12 }}>
-          Select a camera to edit it, or use the Camera tool to place one.
-          Calibrate first so ranges are in real-world {unitLabel(project.units)}.
-        </p>
+        <div className="card" style={{ color: "var(--muted)", fontSize: 12.5, lineHeight: 1.5 }}>
+          {project.cameras.length === 0
+            ? "Use the Camera tool to drop a camera, then drag the white handle to aim it."
+            : "Select a camera to edit its lens, height and aim."}
+          {!project.scale && (
+            <div style={{ marginTop: 8, color: "var(--warn)" }}>
+              Calibrate the scale so ranges are in real-world {unitLabel(project.units)}.
+            </div>
+          )}
+        </div>
       )}
 
-      <h2 style={{ marginTop: 20 }}>Cameras ({project.cameras.length})</h2>
+      <div className="summary" style={{ marginTop: 14 }}>
+        <div className="summary-row">
+          <span>Scale</span>
+          <strong className={project.scale ? "" : undefined} style={{ color: project.scale ? "var(--accent)" : "var(--warn)" }}>
+            {project.scale ? `${project.scale.pxPerMeter.toFixed(1)} px/m` : "uncalibrated"}
+          </strong>
+        </div>
+        <div className="summary-row"><span>Walls</span><strong>{project.walls.length}</strong></div>
+        <div className="summary-row"><span>Zones</span><strong>{project.zones.length}</strong></div>
+      </div>
+
+      {(project.walls.length > 0 || project.zones.length > 0) && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {project.walls.length > 0 && (
+            <button className="danger" style={{ flex: 1 }} onClick={() => commit((d) => { d.walls = []; })}>
+              Clear walls
+            </button>
+          )}
+          {project.zones.length > 0 && (
+            <button className="danger" style={{ flex: 1 }} onClick={() => commit((d) => { d.zones = []; })}>
+              Clear zones
+            </button>
+          )}
+        </div>
+      )}
+
+      <h2 style={{ marginTop: 6 }}>Cameras ({project.cameras.length})</h2>
       <ul className="camera-list">
         {project.cameras.map((c) => (
-          <li
-            key={c.id}
-            className={c.id === selectedId ? "sel" : ""}
-            onClick={() => setSelected(c.id)}
-          >
+          <li key={c.id} className={c.id === selectedId ? "sel" : ""} onClick={() => setSelected(c.id)}>
             <span className="swatch" style={{ background: c.color }} />
             <span style={{ flex: 1 }}>{c.label}</span>
-            <span style={{ color: "var(--muted)" }}>
-              {formatLength(c.rangeMeters, project.units, 0)}
-            </span>
+            <span style={{ color: "var(--muted)" }}>{formatLength(c.rangeMeters, project.units, 0)}</span>
           </li>
         ))}
       </ul>
-
-      <SystemPanel />
-      <QuotePanel />
-    </aside>
+    </div>
   );
 }
 
@@ -367,7 +333,7 @@ function Slider({
   );
 }
 
-function CoverageSummary() {
+export function CoverageSummary() {
   const result = useAnalysis();
   if (!result) {
     return (
